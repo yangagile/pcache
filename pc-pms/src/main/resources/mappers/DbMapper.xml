@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.cloud.pc.mapper.DbMapper">
+
+    <resultMap id="PBucketResultMap" type="com.cloud.pc.meta.PBucket">
+        <id column="id" property="id" jdbcType="INTEGER"/>
+        <result column="name" property="name" jdbcType="VARCHAR"/>
+        <result column="prefix" property="prefix" jdbcType="VARCHAR"/>
+        <result column="feature_flags" property="featureFlags" jdbcType="INTEGER"/>
+        <result column="quota_capacity" property="quotaCapacity" jdbcType="BIGINT"/>
+        <result column="quota_bandwidth" property="quotaBandwidth" jdbcType="INTEGER"/>
+        <result column="quota_qps" property="quotaQps" jdbcType="INTEGER"/>
+        <result column="policy_ttl" property="policyTtl" jdbcType="VARCHAR"/>
+        <result column="policy_permission" property="policyPermission" jdbcType="VARCHAR"/>
+        <result column="policy_routing" property="policyRouting" jdbcType="VARCHAR"/>
+        <result column="description" property="description" jdbcType="VARCHAR"/>
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
+        <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
+        <result column="access_time" property="accessTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="addPBucket" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `pbucket` (name, prefix, feature_flags, quota_capacity, quota_bandwidth,
+                                       quota_qps, policy_ttl, policy_permission, policy_routing,
+                                       description)
+        VALUES(#{name}, #{prefix}, #{featureFlags}, #{quotaCapacity}, #{quotaBandwidth},
+               #{quotaQps}, #{policyTtl}, #{policyPermission}, #{policyRouting},
+               #{description})
+    </insert>
+
+    <select id="loadPBucket" resultMap="PBucketResultMap">
+        SELECT * FROM pbucket
+    </select>
+
+
+    <resultMap id="SecretResultMap" type="com.cloud.pc.meta.Secret">
+        <id column="id" property="id" jdbcType="INTEGER"/>
+        <result column="access_key" property="accessKey" jdbcType="VARCHAR"/>
+        <result column="secret_key" property="secretKey" jdbcType="VARCHAR"/>
+        <result column="mail" property="mail" jdbcType="VARCHAR"/>
+        <result column="phone" property="phone" jdbcType="VARCHAR"/>
+        <result column="description" property="description" jdbcType="VARCHAR"/>
+        <result column="iam" property="iam" jdbcType="VARCHAR"/>
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
+        <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
+        <result column="access_time" property="accessTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <select id="loadSecret" resultMap="SecretResultMap">
+        SELECT * FROM `secret`
+    </select>
+
+    <insert id="addSecret">
+        INSERT INTO `secret` (access_key, secret_key, mail, phone, description,
+             iam)
+        VALUES(#{accessKey}, #{secretKey}, #{mail}, #{phone}, #{description},
+             #{iam})
+    </insert>
+
+    <update id="updateSecret">
+        UPDATE `secret`
+        SET secret_key=#{secretKey},mail=#{mail},phone=#{phone},description=#{description},
+            iam=#{iam},update_time=#{updateTime}
+        WHERE access_key = #{accessKey}
+    </update>
+
+
+    <resultMap id="VendorBucketResultMap" type="com.cloud.pc.meta.VendorBucket">
+        <id column="id" property="id" jdbcType="INTEGER"/>
+        <result column="name" property="name" jdbcType="VARCHAR"/>
+        <result column="vendor" property="vendor" jdbcType="VARCHAR"/>
+        <result column="region" property="region" jdbcType="VARCHAR"/>
+        <result column="permission" property="permission" jdbcType="VARCHAR"/>
+        <result column="endpoint" property="endpoint" jdbcType="VARCHAR"/>
+        <result column="cdn_endpoint" property="cdnEndpoint" jdbcType="VARCHAR"/>
+        <result column="quota_capacity" property="quotaCapacity" jdbcType="BIGINT"/>
+        <result column="quota_qps" property="quotaQps" jdbcType="INTEGER"/>
+        <result column="quota_bandwidth" property="quotaBandwidth" jdbcType="INTEGER"/>
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
+        <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
+        <result column="access_time" property="accessTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="addVendorBucket" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `vendorbucket` (name, vendor, region, permission, endpoint,
+                                     cdn_endpoint, quota_capacity, quota_qps, quota_bandwidth)
+        VALUES(#{name}, #{vendor}, #{region}, #{permission}, #{endpoint},
+               #{cdnEndpoint}, #{quotaCapacity}, #{quotaQps}, #{quotaBandwidth})
+    </insert>
+
+    <select id="loadVendorBucket" resultMap="VendorBucketResultMap">
+        SELECT * FROM `vendorbucket`
+    </select>
+
+    <resultMap id="VendorResultMap" type="com.cloud.pc.meta.Vendor">
+        <id column="id" property="id" jdbcType="INTEGER"/>
+        <result column="name" property="name" jdbcType="VARCHAR"/>
+        <result column="region" property="region" jdbcType="VARCHAR"/>
+        <result column="description" property="description" jdbcType="VARCHAR"/>
+        <result column="access_key" property="accessKey" jdbcType="VARCHAR"/>
+        <result column="access_secret" property="accessSecret" jdbcType="VARCHAR"/>
+        <result column="s3_endpoint" property="s3Endpoint" jdbcType="VARCHAR"/>
+        <result column="endpoint" property="endpoint" jdbcType="VARCHAR"/>
+        <result column="internal_endpoint" property="internalEndpoint" jdbcType="VARCHAR"/>
+        <result column="sts_endpoint" property="stsEndpoint" jdbcType="VARCHAR"/>
+        <result column="cdn_endpoint" property="cdnEndpoint" jdbcType="VARCHAR"/>
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
+        <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <insert id="addVendor" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `vendor` (name, region, description, access_key, access_secret,
+                                     s3_endpoint, endpoint, internal_endpoint, sts_endpoint)
+        VALUES(#{name},  #{region}, #{description}, #{accessKey}, #{accessSecret},
+               #{s3Endpoint}, #{endpoint}, #{internalEndpoint}, #{stsEndpoint})
+    </insert>
+
+    <select id="loadVendor" resultMap="VendorResultMap">
+        SELECT * FROM `vendor`
+    </select>
+
+</mapper>
