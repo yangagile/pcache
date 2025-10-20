@@ -1,0 +1,6 @@
+# 这是一个注释。
+# 所有文件默认由全局所有者审查
+*       @global-owner1 @global-owner2
+
+# docs目录下的直接文件由docs团队审查
+docs/*  docs@example.com
