@@ -78,6 +78,6 @@ public class IamUtils {
                 }
             }
         }
-        throw new RuntimeException("invalid auth");
+        throw new RuntimeException("IAM error: the AK does not have the permissions:" + actionPrefix);
     }
 }

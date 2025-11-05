@@ -17,13 +17,17 @@
 package com.cloud.pc.controller;
 
 import com.cloud.pc.config.Envs;
+import com.cloud.pc.iam.IamPolicy;
+import com.cloud.pc.iam.IamUtils;
 import com.cloud.pc.meta.PBucket;
 import com.cloud.pc.meta.PcMeta;
+import com.cloud.pc.meta.Secret;
 import com.cloud.pc.model.PcPermission;
 import com.cloud.pc.model.routing.RoutingResult;
 import com.cloud.pc.requester.PBucketRequester;
 import com.cloud.pc.service.SecretService;
 import com.cloud.pc.service.PBucketService;
+import com.cloud.pc.utils.JsonUtils;
 import com.cloud.pc.utils.OpsTrace;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -92,7 +96,11 @@ public class PBucketController {
         String exception;
         try {
             OpsTrace.set("apply-sts");
-            secretService.checkToken(ak, token, null);
+            Secret secret = secretService.checkToken(ak, token, null);
+            for (PcPermission permission : permissions) {
+                IamUtils.checkAction(JsonUtils.fromJson(secret.getIam(), IamPolicy.class),
+                        "s3:" + permission.toString());
+            }
             LOG.info("{} bucket={} path={} permissions={} expirationTime={} token={}",
                     OpsTrace.get(), bucket, path, permissions, expirationInSeconds, token);
 

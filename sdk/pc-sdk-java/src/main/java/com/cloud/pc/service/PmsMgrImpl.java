@@ -35,7 +35,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.security.InvalidParameterException;
 import java.util.*;
 
 public class PmsMgrImpl implements PmsMgr{
@@ -135,7 +137,7 @@ public class PmsMgrImpl implements PmsMgr{
                 bucket, prefix, permissions, expirationInSeconds);
         if (CollectionUtils.isEmpty(permissions)) {
             LOG.error("permissions parameter cannot be empty.");
-            return null;
+            throw new InvalidParameterException("permissions parameter cannot be empty.");
         }
 
         StringBuilder path = new StringBuilder(getPmsUrl("api/v1/pb/"));
@@ -144,36 +146,41 @@ public class PmsMgrImpl implements PmsMgr{
         if (-1 != expirationInSeconds) {
             params.put("expirationInSeconds", Integer.toString(expirationInSeconds));
         }
-        try {
-            if (StringUtils.isNotBlank(prefix)) {
-                prefix = URLEncoder.encode(prefix, "UTF-8");
-            }
-            params.put("path", StringUtils.defaultIfBlank(prefix, ""));
-            for(PcPermission permission : permissions) {
-                params.put("permissions", permission.name());
-            }
+
+
+        if (StringUtils.isNotBlank(prefix)) {
             try {
-                Map<String, Object> claims = new HashMap<>();
-                claims.put("bucket", bucket);
-                claims.put("path", prefix);
-                claims.put("permissions", permissions);
-                HttpUtils.HttpResponse response = HttpUtils.sendRequest(path.toString(),
-                        "GET", getPmsHeader(30000, claims), params, null);
-                if (response.getStatusCode() == 200) {
-                    RoutingResult routingResult = JsonUtils.fromJson(response.getBody(), RoutingResult.class);
-                    LOG.info("got STS:{}", routingResult);
-                    return routingResult;
-                } else {
-                    LOG.error("failed to get STS! code:{} msg:{}" ,
-                            response.getStatusCode(), response.getBody());
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
+                prefix = URLEncoder.encode(prefix, "UTF-8");
+            } catch (UnsupportedEncodingException e) {
+                LOG.error("failed to encode prefix with UTF-8.", e);
+                throw new RuntimeException(e);
             }
-        } catch (Exception e) {
-            LOG.error("failed to get STS! " , e);
         }
-        return null;
+        params.put("path", StringUtils.defaultIfBlank(prefix, ""));
+        for (PcPermission permission : permissions) {
+            params.put("permissions", permission.name());
+        }
+
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("bucket", bucket);
+        claims.put("path", prefix);
+        claims.put("permissions", permissions);
+        try  {
+            HttpUtils.HttpResponse response = HttpUtils.sendRequest(path.toString(),
+                    "GET", getPmsHeader(30000, claims), params, null);
+            if (response.getStatusCode() == 200) {
+                RoutingResult routingResult = JsonUtils.fromJson(response.getBody(), RoutingResult.class);
+                LOG.info("got STS:{}", routingResult);
+                return routingResult;
+            } else {
+                LOG.error("failed to get STS! code:{} msg:{}",
+                        response.getStatusCode(), response.getBody());
+                throw new RuntimeException(response.getBody());
+            }
+        } catch (IOException e) {
+            LOG.error("failed to send request to PMS {}", path, e);
+            throw new RuntimeException(e);
+        }
     }
 
     public String getPcp(String key) {
