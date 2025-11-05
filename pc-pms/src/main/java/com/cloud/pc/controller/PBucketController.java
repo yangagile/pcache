@@ -97,9 +97,11 @@ public class PBucketController {
         try {
             OpsTrace.set("apply-sts");
             Secret secret = secretService.checkToken(ak, token, null);
-            for (PcPermission permission : permissions) {
-                IamUtils.checkAction(JsonUtils.fromJson(secret.getIam(), IamPolicy.class),
-                        "s3:" + permission.toString());
+            if (secret != null) {
+                for (PcPermission permission : permissions) {
+                    IamUtils.checkAction(JsonUtils.fromJson(secret.getIam(), IamPolicy.class),
+                            "s3:" + permission.toString());
+                }
             }
             LOG.info("{} bucket={} path={} permissions={} expirationTime={} token={}",
                     OpsTrace.get(), bucket, path, permissions, expirationInSeconds, token);
