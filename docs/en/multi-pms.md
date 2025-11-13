@@ -7,6 +7,6 @@
 3. Multiple PMS instances can be started following the same steps.
 
 ```
-pms.urls=${PMS1_URL}
+pms.existing.url=${PMS1_URL}
 // Note: If testing on the same machine, it is necessary to modify the port (server.port) of the second PMS and the file path for storing Meta (pms.data.loader.file.path).
 
