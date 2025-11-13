@@ -19,6 +19,7 @@ package com.cloud.pc.meta.impl;
 import com.cloud.pc.meta.*;
 import com.cloud.pc.service.MetaService;
 import com.cloud.pc.utils.ComUtils;
+import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.JsonUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -64,7 +65,7 @@ public class FileLoader implements MetaLoader {
     }
 
     private void loadClassData(ObjectNode objectNode, Class<?> clazz) throws IOException {
-        Path file = Paths.get(metaRoot + ComUtils.className(clazz));
+        Path file = Paths.get(FileUtils.mergePath(metaRoot, ComUtils.className(clazz)));
         try (InputStream inputStream = Files.newInputStream(file);
              ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream()) {
 

@@ -46,7 +46,7 @@ PCache consists of three modules:
 
 * Manages cache nodes (PCPs) and provides clients with a list of available PCPs.
 
-* Supports multi-node deployment with synchronous writes and asynchronous reads from multiple nodes.
+* Supports Multi-PMS deployment.[How to use multiple PMS](docs/en/multi-pms.md).
 
 ### Parallel Cache Node (PCP)
 * A file block server implemented using Netty, focused on high-speed upload/download of file blocks.

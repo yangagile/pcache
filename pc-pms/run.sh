@@ -4,6 +4,8 @@ CUR_DIR=$(cd "$(dirname "$0")" && pwd)
 PARENT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 META_DIR="${PARENT_DIR}/meta/"
 LOG_DIR="${PARENT_DIR}/logs/"
+mkdir -p "${META_DIR}"
+mkdir -p "${LOG_DIR}"
 
 VM_OPT="-Xms512m -Xmx1024m"
 

@@ -21,13 +21,13 @@ import com.cloud.pc.meta.*;
 
 import com.cloud.pc.meta.PBucket;
 import com.cloud.pc.meta.impl.FileLoader;
-import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.JsonUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +55,9 @@ public class MetaService {
     @Autowired
     public void loaderInterface(Map<String, MetaLoader> loaders) throws IOException {
         this.loaderMap.putAll(loaders);
+    }
+
+    public void init() throws IOException {
         MetaLoader loader = loaderMap.get(Envs.dataLoader);
         if(loader == null) {
             LOG.error("failed to get loader {}!", Envs.dataLoader);
@@ -66,15 +69,16 @@ public class MetaService {
         vendorBucketTable = new MetaTable(VendorBucket.class, loader);
         try {
             loadMeta();
-            if (secretTable.isEmpty()) {
-                initMeta();
+            // if the first PMS and secret table is empty, init secret table.
+            if (StringUtils.isBlank(Envs.existingPmsUrls) && secretTable.isEmpty()) {
+                initSecret();
             }
         } catch (Exception e) {
             LOG.error("failed to load meta!", Envs.dataLoader);
         }
     }
 
-    public void initMeta() throws Exception{
+    public void initSecret() throws Exception{
         Secret secret = new Secret();
         secret.setAccessKey(Envs.ak);
         secret.setSecretKey(Envs.sk);
@@ -116,12 +120,12 @@ public class MetaService {
     }
 
     public void syncMeta(String content) throws Exception {
-        FileLoader fileLoader = new FileLoader();
-        fileLoader.sync(content);
-        bucketTable.sync(fileLoader);
-        secretTable.sync(fileLoader);
-        vendorTable.sync(fileLoader);
-        vendorBucketTable.sync(fileLoader);
+        MetaLoader loader = loaderMap.get(Envs.dataLoader);
+        loader.sync(content);
+        bucketTable.sync(loader);
+        secretTable.sync(loader);
+        vendorTable.sync(loader);
+        vendorBucketTable.sync(loader);
     }
 
     public long getVersion() {

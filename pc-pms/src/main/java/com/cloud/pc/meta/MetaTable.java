@@ -154,5 +154,6 @@ public class MetaTable {
     public void sync(MetaLoader loader) throws Exception{
         List<PcMeta> its = loader.load(type);
         updateAll(its);
+        dump2File(loader.getRootPath());
     }
 }

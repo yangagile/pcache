@@ -27,7 +27,7 @@ public class Envs {
             "./meta/", String::valueOf);
 
     // The list of existing PMS addresses， seperated by ','. this value is empty for the first PMS.
-    public static String pmsUrls = ComUtils.getProps("pms.urls",
+    public static String existingPmsUrls = ComUtils.getProps("pms.existing.url",
             "", String::valueOf);
 
     // http
@@ -57,5 +57,8 @@ public class Envs {
 
     // PCP
     public static Long pcpLiveMaxTime = ComUtils.getProps("pms.pcp.max.live.time.sec",
+            120L, Long::valueOf);
+
+    public static Long pmsLiveMaxTime = ComUtils.getProps("pms.max.live.time.sec",
             120L, Long::valueOf);
 }

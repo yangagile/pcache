@@ -17,10 +17,10 @@
 package com.cloud.pc.service;
 
 import com.cloud.pc.config.Envs;
-import com.cloud.pc.meta.impl.FileLoader;
 import com.cloud.pc.model.PcpPulseInfo;
 import com.cloud.pc.model.PmsInfo;
 import com.cloud.pc.model.PmsPulseInfo;
+import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.HttpUtils;
 import com.cloud.pc.utils.JsonUtils;
 import com.cloud.pc.utils.NetUitls;
@@ -28,6 +28,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringApplication;
+import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -49,28 +51,28 @@ public class PmsService {
     @Autowired
     PcpService pcpService;
 
+    @Autowired
+    private ApplicationContext context;
+
     @PostConstruct
     void init() {
         try {
-            PmsInfo PmsInfo = new PmsInfo();
-            PmsInfo.setHost(Envs.httpHeader + NetUitls.getIp() + ":" + Envs.port + "/");
-            PmsInfo.setUpdateTime(new Date());
-            PmsInfo.setMetaVersion(metaService.getVersion());
+            metaService.init();
+
+            PmsInfo PmsInfo = new PmsInfo(Envs.httpHeader + NetUitls.getIp() + ":" + Envs.port + "/",
+                    metaService.getVersion());
             pmsList.add(PmsInfo);
-            if (StringUtils.isNotBlank(Envs.pmsUrls)) {
-                for (String url : Envs.pmsUrls.split(",")) {
-                    url = url.trim();
-                    if (!url.endsWith("/")) {
-                        url += "/";
-                    }
-                    PmsInfo = new PmsInfo();
-                    PmsInfo.setHost(url);
-                    pmsList.add(PmsInfo);
+            if (StringUtils.isNotBlank(Envs.existingPmsUrls)) {
+                PmsInfo existingInfo = new PmsInfo(Envs.existingPmsUrls, -1);
+                existingInfo.setHost(Envs.existingPmsUrls);
+                if(!sendPulseTo(existingInfo)) {
+                    LOG.error("failed to get meta fomr existing pms url {}, exit application!", Envs.existingPmsUrls);
+                    SpringApplication.exit(context, () -> 1);
                 }
             }
         } catch (Exception e) {
             LOG.error("exception to init PMS", e);
-            System.exit(-1);
+            SpringApplication.exit(context, () -> 1);
         }
     }
 
@@ -111,7 +113,7 @@ public class PmsService {
         }
     }
 
-    private void sendPulseTo(PmsInfo pmsInfo) {
+    private boolean sendPulseTo(PmsInfo pmsInfo) {
         String url = pmsInfo.getHost() + "api/v1/pms/pms/pulse";
         PmsPulseInfo pulseInfo = new PmsPulseInfo();
         pmsList.get(0).setMetaVersion(metaService.getVersion());
@@ -122,12 +124,14 @@ public class PmsService {
                     "POST", getPmsHeader(), null, JsonUtils.toJson(pulseInfo));
             if (response.getStatusCode() == 200) {
                 LOG.info("pulse info:{}", pulseInfo);
+                return true;
             } else {
                 LOG.error("failed to send pulse info! error:{}", response.getStatusCode());
             }
         } catch (Exception e) {
-            LOG.error("exception to ");
+            LOG.error("exception to send pulse to {}", url, e);
         }
+        return false;
     }
 
     public void receivePulse(PmsPulseInfo pmsPulseInfo) {
@@ -174,8 +178,10 @@ public class PmsService {
 
     @Scheduled(fixedRateString = "${pc.pms.pulse.interval.millis:10000}")
     public void sendPulse() {
-        for (int i = 1; i<  pmsList.size(); i++) {
-            sendPulseTo(pmsList.get(i));
+        Date now = new Date();
+        pmsList.removeIf(pms -> now.getTime() - pms.getUpdateTime().getTime() > Envs.pmsLiveMaxTime * 1000);
+        for (PmsInfo pms : pmsList) {
+            sendPulseTo(pms);
         }
     }
 }

@@ -27,4 +27,14 @@ public class PmsInfo {
     private String host;
     private long   metaVersion;
     private Date   updateTime;
+
+    public PmsInfo() {
+
+    }
+
+    public PmsInfo(String host, long version) {
+        this.host = host;
+        this.metaVersion = version;
+        this.updateTime = new Date();
+    }
 }
