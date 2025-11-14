@@ -29,23 +29,44 @@ import java.security.NoSuchAlgorithmException;
 import java.text.DecimalFormat;
 import java.util.Base64;
 import java.util.List;
+import java.util.zip.CRC32;
 
 public class FileUtils {
 
-    public static String getMD5Base64FromFile(InputStream inputStream, long contentLength, String hashType)
+    public static String getMD5Base64FromFile(String fileName)
             throws NoSuchAlgorithmException,IOException {
-        String value = null;
-        if (inputStream instanceof FileInputStream) {
-            FileInputStream fileInputStream = (FileInputStream) inputStream;
-            MappedByteBuffer byteBuffer = fileInputStream.getChannel().map(FileChannel.MapMode.READ_ONLY,
-                    0, contentLength > 0 ? contentLength : fileInputStream.available());
-            MessageDigest md5 = MessageDigest.getInstance(hashType);
-            md5.update(byteBuffer);
-            byte[] bytes = md5.digest();
-            value = Base64.getEncoder().encodeToString(bytes);
-            byteBuffer.clear();
+        MessageDigest md5 = MessageDigest.getInstance("MD5");
+        try (FileInputStream fis = new FileInputStream(fileName)) {
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                md5.update(buffer, 0, bytesRead);
+            }
         }
-        return value;
+        byte[] bytes = md5.digest();
+        return  Base64.getEncoder().encodeToString(bytes);
+    }
+
+    public static String getCRC32Base64FromFile(String fileName)
+            throws IOException {
+        CRC32 crc32 = new CRC32();
+        try (FileInputStream fis = new FileInputStream(fileName)) {
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                crc32.update(buffer, 0, bytesRead);
+            }
+        }
+        long crcValue = crc32.getValue();
+
+        // Convert a long value to a 4-byte array (big-endian order)
+        byte[] crcBytes = new byte[4];
+        crcBytes[0] = (byte) ((crcValue >> 24) & 0xFF);
+        crcBytes[1] = (byte) ((crcValue >> 16) & 0xFF);
+        crcBytes[2] = (byte) ((crcValue >> 8) & 0xFF);
+        crcBytes[3] = (byte) (crcValue & 0xFF);
+
+        return Base64.getEncoder().encodeToString(crcBytes);
     }
 
     public static void mergeFiles(List<String> partPaths, Path targetPath) throws IOException {

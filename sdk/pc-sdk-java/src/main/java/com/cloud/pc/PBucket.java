@@ -83,8 +83,9 @@ public class PBucket {
             512, Integer::valueOf);
     public String contentDispositionDefault = ComUtils.getProps("pc.content.disposition.default",
             "attachment", String::valueOf);
-    public Boolean md5ContentEnable = ComUtils.getProps("pc.content.md5.enable",
-            false, Boolean::valueOf);
+    // add user metadata with object's checksum.
+    public String checksumAlgorithm = ComUtils.getProps("pc.checksum.algorithm",
+            "CRC32", String::valueOf);
     public int blockSize = ComUtils.getProps("pc.block.size",
             5*1024*1024, Integer::valueOf);
     public int blockGroupSize = ComUtils.getProps("pc.block.group.size",
@@ -171,12 +172,20 @@ public class PBucket {
         }
         PutObjectResponse response;
         try {
+            Map<String, String> userMetas = new HashMap<>();
+            if (checksumAlgorithm.equalsIgnoreCase("MD5")) {
+                String checksum = FileUtils.getMD5Base64FromFile(localFile);
+                userMetas.put("checksum-md5", checksum);
+            } else if (checksumAlgorithm.equalsIgnoreCase("CRC32")) {
+                String checksum = FileUtils.getCRC32Base64FromFile(localFile);
+                userMetas.put("checksum-crc32", checksum);
+            }
             S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
             stsInfo.setKey(fullKey.toString());
             if (enablePCache && file.length() > blockSize) {
-                response = putObjectPCache(s3Client, stsInfo, fullKey.toString(), file);
+                response = putObjectPCache(s3Client, stsInfo, fullKey.toString(), file, userMetas);
             } else {
-                response = putObjectNormal(s3Client, stsInfo, fullKey.toString(), file);
+                response = putObjectNormal(s3Client, stsInfo, fullKey.toString(), file, userMetas);
             }
             if (!S3Utils.isPutObjectSuccessful(response)) {
                 LOG.error("failed to put object for invalid eTag!");
@@ -193,7 +202,7 @@ public class PBucket {
     }
 
     private PutObjectResponse putObjectNormal(S3Client s3Client, StsInfo stsInfo, String fullKey,
-                                              File file) {
+                                              File file, Map<String, String> userMetas) {
         PutObjectRequest.Builder builder = PutObjectRequest.builder();
         InputStream inputStream;
         try {
@@ -202,19 +211,10 @@ public class PBucket {
             LOG.error("input file:{} is not found!", file);
             throw SdkClientException.create("invalid input file", e);
         }
-        if (md5ContentEnable) {
-            try {
-                String contentMd5 = FileUtils.getMD5Base64FromFile(inputStream, file.length(), "MD5");
-                if (StringUtils.isNotBlank(contentMd5)) {
-                    builder.contentMD5(contentMd5);
-                }
-            } catch (Exception e) {
-                LOG.error("failed to get MD5 from file {}!", file, e);
-                throw SdkClientException.create("failed to get MD5 from file " + file , e);
-            }
-        }
+
         PutObjectRequest putObjectRequest = builder.bucket(stsInfo.getName())
                 .contentLength(file.length())
+                .metadata(userMetas)
                 .contentDisposition(S3Utils.getContentDispositionHeaderValue(
                         contentDispositionDefault, Paths.get(fullKey).getFileName().toString()))
                 .key(fullKey.toString()).build();
@@ -224,7 +224,8 @@ public class PBucket {
         return response;
     }
 
-    private PutObjectResponse putObjectPCache(S3Client s3Client, StsInfo stsInfo, String fullKey, File file) {
+    private PutObjectResponse putObjectPCache(S3Client s3Client, StsInfo stsInfo, String fullKey, File file,
+                                              Map<String, String> userMetas) {
         try {
             if (parallelManager == null) {
                 parallelManager = new ParallelManager();
@@ -238,7 +239,7 @@ public class PBucket {
             long leftSize = file.length();
 
             CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().
-                    bucket(stsInfo.getName()).key(fullKey).build();
+                    bucket(stsInfo.getName()).key(fullKey).metadata(userMetas).build();
             CreateMultipartUploadResponse response = s3Client.createMultipartUpload(request);
             String uploadId = response.uploadId();
 
@@ -375,7 +376,7 @@ public class PBucket {
                             host, name, fullKey, i, partSize);
                 } else {
                     fileUrl = String.format("%s/%s.%08d_%d",
-                            fullKey, name, i, partSize);
+                            name, fullKey, i, partSize);
                 }
                 String localFile = String.format("%s.%08d_%d", localFilePath, i, partSize);
                 localFilePaths.add(localFile);
