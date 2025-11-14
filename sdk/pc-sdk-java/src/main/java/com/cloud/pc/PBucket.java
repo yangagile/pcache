@@ -371,11 +371,11 @@ public class PBucket {
                 String host = pmsMgr.getPcp(fullKey + i);
                 String fileUrl;
                 if (host != null) {
-                    fileUrl = String.format("%stest-vb/%s.%08d_%d",
-                            host, fullKey, i, partSize);
+                    fileUrl = String.format("%s%s/%s.%08d_%d",
+                            host, name, fullKey, i, partSize);
                 } else {
-                    fileUrl = String.format("test-vb/%s.%08d_%d",
-                            fullKey, i, partSize);
+                    fileUrl = String.format("%s/%s.%08d_%d",
+                            fullKey, name, i, partSize);
                 }
                 String localFile = String.format("%s.%08d_%d", localFilePath, i, partSize);
                 localFilePaths.add(localFile);

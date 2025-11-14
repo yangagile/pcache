@@ -112,6 +112,7 @@ public class PmsMgrImpl implements PmsMgr{
             }
         } catch (IOException e) {
             LOG.error("exception to get bucket:{} info!", bucket, e);
+            refreshPmsUrl();
         }
         return null;
     }
@@ -179,6 +180,7 @@ public class PmsMgrImpl implements PmsMgr{
             }
         } catch (IOException e) {
             LOG.error("failed to send request to PMS {}", path, e);
+            refreshPmsUrl();
             throw new RuntimeException(e);
         }
     }
@@ -193,7 +195,7 @@ public class PmsMgrImpl implements PmsMgr{
     }
 
     public PcpHashInfo getPcpHashListApi(String slotTableChecksum) {
-        LOG.info("get lot table, checksume:{}", slotTableChecksum);
+        LOG.info("get PCP hash list, checksume:{}", slotTableChecksum);
         String url = getPmsUrl("api/v1/pcp/hash");
         Map<String, String> params = new HashMap<>();
         params.put("checksum", slotTableChecksum);
@@ -206,6 +208,8 @@ public class PmsMgrImpl implements PmsMgr{
                 LOG.error("failed to get STS! error:{}" , response.getStatusCode());
             }
         } catch (IOException e) {
+            LOG.error("exception to get PCP hash list", e);
+            refreshPmsUrl();
             e.printStackTrace();
         }
         return null;
