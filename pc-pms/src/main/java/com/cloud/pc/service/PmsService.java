@@ -38,12 +38,14 @@ import org.springframework.stereotype.Service;
 import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @Service
 @EnableAsync
 public class PmsService {
     private static final Logger LOG = LoggerFactory.getLogger(PmsService.class);
-    List<PmsInfo> pmsList = new ArrayList<>();
+    volatile List<PmsInfo> pmsList = new ArrayList<>();
 
     @Autowired
     MetaService metaService;
@@ -84,13 +86,24 @@ public class PmsService {
         return headers;
     }
 
-    public List<PmsInfo> getPmsList() {
-        return pmsList;
+    private List<PmsInfo> copyPmsList() {
+        Date now = new Date();
+        List<PmsInfo> copyList = new ArrayList<>();
+        for (int i = 0; i < pmsList.size(); i++) {
+            if (i == 0 || now.getTime() - pmsList.get(i).getUpdateTime().getTime() < Envs.pmsLiveMaxTime * 1000) {
+                copyList.add(pmsList.get(i).deepCopy());
+            }
+        }
+        return copyList;
     }
 
-    private int indexPms(PmsInfo pmsInfo) {
-        for (int i = 0; i < pmsList.size(); i++) {
-            if (pmsInfo.getHost().equals(pmsList.get(i).getHost())) {
+    public List<PmsInfo> getPmsList() {
+        return copyPmsList();
+    }
+
+    private int indexPms(List<PmsInfo> pmsInfos, PmsInfo pmsInfo) {
+        for (int i = 0; i < pmsInfos.size(); i++) {
+            if (pmsInfo.getHost().equals(pmsInfos.get(i).getHost())) {
                 return i;
             }
         }
@@ -136,20 +149,27 @@ public class PmsService {
 
     public void receivePulse(PmsPulseInfo pmsPulseInfo) {
         PmsInfo pmsInfo = pmsPulseInfo.getPmsList().get(0);
-        int i = indexPms(pmsInfo);
+        boolean needUpdateMeta = false;
+        List<PmsInfo> pmsInfos = copyPmsList();
+        int i = indexPms(pmsInfos, pmsInfo);
         if (i < 0) {
-            pmsList.add(pmsPulseInfo.getPmsList().get(0));
+            pmsInfos.add(pmsPulseInfo.getPmsList().get(0));
         } else {
-            pmsList.get(i).setUpdateTime(new Date());
+            pmsInfos.get(i).setUpdateTime(new Date());
         }
-        if (pmsInfo.getMetaVersion() > pmsList.get(0).getMetaVersion()) {
-            syncMetaFrom(pmsInfo);
-        }
-        for (i = 1; i<  pmsPulseInfo.getPmsList().size(); i++) {
-            int index = indexPms(pmsInfo);
+        for (i = 1; i < pmsPulseInfo.getPmsList().size(); i++) {
+            int index = indexPms(pmsInfos, pmsInfo);
             if (index < 0) {
-                pmsList.add(pmsInfo);
+                pmsInfos.add(pmsInfo);
             }
+        }
+        if (pmsInfo.getMetaVersion() > pmsInfos.get(0).getMetaVersion()) {
+            needUpdateMeta = true;
+        }
+        pmsList = pmsInfos;
+
+        if (needUpdateMeta) {
+            syncMetaFrom(pmsInfo);
         }
     }
 
@@ -182,10 +202,8 @@ public class PmsService {
 
     @Scheduled(fixedRateString = "${pc.pms.pulse.interval.millis:10000}")
     public void sendPulse() {
-        Date now = new Date();
-        pmsList.removeIf(pms -> now.getTime() - pms.getUpdateTime().getTime() > Envs.pmsLiveMaxTime * 1000);
-        for (PmsInfo pms : pmsList) {
-            sendPulseTo(pms);
+        for (int i = 1; i < pmsList.size(); i++) {
+            sendPulseTo(pmsList.get(i));
         }
     }
 }

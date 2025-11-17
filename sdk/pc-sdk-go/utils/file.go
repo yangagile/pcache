@@ -22,6 +22,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -107,4 +108,27 @@ func MergeFiles(partPaths []string, targetPath string) error {
 		}
 	}
 	return nil
+}
+
+func MergePath(root, sub string) string {
+	var path string
+
+	// If root is not empty, set path to root
+	if root != "" {
+		path = root
+	}
+
+	// If path is not empty and does not end with "/", add "/"
+	if path != "" && !strings.HasSuffix(path, "/") {
+		path += "/"
+	}
+
+	// If sub starts with "/", remove the leading "/" and append it
+	if strings.HasPrefix(sub, "/") {
+		path += sub[1:]
+	} else {
+		path += sub
+	}
+
+	return path
 }

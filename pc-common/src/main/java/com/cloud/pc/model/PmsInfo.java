@@ -37,4 +37,10 @@ public class PmsInfo {
         this.metaVersion = version;
         this.updateTime = new Date();
     }
+
+    public PmsInfo deepCopy() {
+        PmsInfo newInfo = new PmsInfo(this.host, this.metaVersion);
+        newInfo.updateTime = this.updateTime;
+        return newInfo;
+    }
 }

@@ -17,17 +17,26 @@
 package bucket
 
 import (
+	"context"
 	"testing"
 )
 
+const testPmsUrl = "http://127.0.0.1:8080"
+
 func Test_getPcpList(t *testing.T) {
-	//pmsUrl := "http://127.0.0.1:8080"
-	//checksum := ""
-	//clientId := "cid"
-	//token := "token"
-	//pcpTable, err := GetPcpList(pmsUrl, checksum, clientId, token)
-	//if err != nil {
-	//	t.Error(err)
-	//}
-	//t.Log(pcpTable)
+	ctx := context.Background()
+	pm, _ := NewPmsManager(&ctx, testPmsUrl, nil)
+	_, err := pm.GetPcpList("")
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestPmsManager_RefreshPmsList(t *testing.T) {
+	ctx := context.Background()
+	pm, _ := NewPmsManager(&ctx, testPmsUrl, nil)
+	err := pm.RefreshPmsList()
+	if err != nil {
+		t.Error("faile to refresh PMS list")
+	}
 }

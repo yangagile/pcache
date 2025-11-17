@@ -88,7 +88,7 @@ func NewPBucket(ctx *context.Context, pmsUrl, bucket, ak, sk string, opts ...Opt
 		return nil, err
 	}
 
-	pb.pmsMgr, err = NewPmsManager(ctx, strings.Split(pmsUrl, ","), pb.secretMgr)
+	pb.pmsMgr, err = NewPmsManager(ctx, pmsUrl, pb.secretMgr)
 	if err != nil {
 		log.WithError(err).WithField("pmsUrl", pmsUrl).Errorln("failed to init PmsManager")
 		return nil, err
