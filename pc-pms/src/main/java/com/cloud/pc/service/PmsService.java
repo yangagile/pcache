@@ -171,8 +171,12 @@ public class PmsService {
 
     public void pcpPulse(PcpPulseInfo pulseInfo) {
         pcpService.pulse(pulseInfo);
-        for (int i =1; i < pmsList.size(); i++) {
-            sendPcpPulseToOther(pmsList.get(i).getHost(), pulseInfo);
+        // only transfer the pulse from PCP
+        if (pulseInfo.getLevel() > 0) {
+            for (int i = 1; i < pmsList.size(); i++) {
+                pulseInfo.setLevel(pulseInfo.getLevel() - 1);
+                sendPcpPulseToOther(pmsList.get(i).getHost(), pulseInfo);
+            }
         }
     }
 

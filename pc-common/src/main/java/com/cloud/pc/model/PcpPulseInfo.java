@@ -28,4 +28,5 @@ public class PcpPulseInfo {
     Long usedSize;
     Long fileCount;
     Float adjust = 0.0f;
+    int level = 1;
 }

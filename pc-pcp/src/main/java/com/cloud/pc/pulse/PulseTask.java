@@ -61,6 +61,7 @@ public class PulseTask implements Runnable{
             pulseInfo.setTotalSize(Envs.availableSize);
             pulseInfo.setUsedSize(stat.getSize());
             pulseInfo.setFileCount(stat.getCount());
+            pulseInfo.setLevel(1);
             HttpUtils.HttpResponse response = HttpUtils.sendRequest(url,
                     "POST", getPmsHeader(), null, JsonUtils.toJson(pulseInfo));
             if (response.getStatusCode() == 200) {
