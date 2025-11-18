@@ -29,6 +29,7 @@ import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.HttpUtils;
 import com.cloud.pc.utils.JsonUtils;
 import com.cloud.pc.utils.SecretUtils;
+import com.cloud.pc.utils.UrlProbe;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -39,37 +40,36 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.security.InvalidParameterException;
 import java.util.*;
+import java.util.stream.Collectors;
 
-public class PmsMgrImpl implements PmsMgr{
+public class PmsMgrImpl implements PmsMgr, UrlProbe.IUrlProbeFunction{
     public static final String URL_PARAMS_JOIN = "?";
     private static Logger LOG = LoggerFactory.getLogger(PmsMgrImpl.class);
-    PmsProbe pmsProbe;
+    UrlProbe pmsProbe;
     PcpCache pcpCache = new PcpCache();
     String ak;
     String sk;
 
     public PmsMgrImpl(String pmsMgr, String ak, String sk) {
-        pmsProbe = new PmsProbe(pmsMgr, this);
         this.ak = ak;
         this.sk = sk;
-
-        refreshPmsUrl();
+        pmsProbe = new UrlProbe(pmsMgr, this);
     }
 
     private Map<String, String> getPmsHeader(long expirationMs, Map<String, Object> claims) {
         Map<String, String> headers = new HashMap<>();
         headers.put("accept", "application/json;charset=UTF-8"); // 要求响应为 JSON
-        headers.put("X-AK", ak);
-        headers.put("X-TOKEN", SecretUtils.generateToken(ak, sk, expirationMs, claims));
+        if (StringUtils.isNotBlank(ak)) {
+            headers.put("X-AK", ak);
+            if (StringUtils.isNotBlank(sk)) {
+                headers.put("X-TOKEN", SecretUtils.generateToken(ak, sk, expirationMs, claims));
+            }
+        }
         return headers;
     }
 
     private String getPmsUrl(String path) {
-        return FileUtils.mergePath(pmsProbe.getPmsUrl(), path);
-    }
-
-    private void refreshPmsUrl() {
-        new Thread(pmsProbe).start();
+        return FileUtils.mergePath(pmsProbe.getUrl(), path);
     }
 
     public List<PmsInfo> getPmsApi(String url) {
@@ -112,7 +112,7 @@ public class PmsMgrImpl implements PmsMgr{
             }
         } catch (IOException e) {
             LOG.error("exception to get bucket:{} info!", bucket, e);
-            refreshPmsUrl();
+            pmsProbe.reportFail(path.toString());
         }
         return null;
     }
@@ -180,7 +180,7 @@ public class PmsMgrImpl implements PmsMgr{
             }
         } catch (IOException e) {
             LOG.error("failed to send request to PMS {}", path, e);
-            refreshPmsUrl();
+            pmsProbe.reportFail(path.toString());
             throw new RuntimeException(e);
         }
     }
@@ -209,9 +209,20 @@ public class PmsMgrImpl implements PmsMgr{
             }
         } catch (IOException e) {
             LOG.error("exception to get PCP hash list", e);
-            refreshPmsUrl();
+            pmsProbe.reportFail(url);
             e.printStackTrace();
         }
         return null;
+    }
+
+    public List<String> getUrlList(String url) {
+        List<PmsInfo> pmsInfos = getPmsApi(url);
+
+        if (pmsInfos == null || pmsInfos.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return pmsInfos.stream()
+                .map(PmsInfo::getHost)  // 提取每个 PmsInfo 的 host
+                .collect(Collectors.toList());  // 收集成列表并返回
     }
 }
