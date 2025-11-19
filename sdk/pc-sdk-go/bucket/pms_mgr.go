@@ -19,10 +19,8 @@ package bucket
 import (
 	"context"
 	log "github.com/sirupsen/logrus"
-	"sort"
 	"testdisk/model"
 	"testdisk/utils"
-	"time"
 )
 
 const URL_PATH_STS = "/api/v1/pb/"
@@ -43,22 +41,33 @@ type PmsUrlStats struct {
 }
 
 type PmsManager struct {
-	pmsUrls   []*PmsUrlStats
-	secretMgr *SecretManager
+	urlProve   *utils.UrlProbe
+	secretMgr  *SecretManager
+	retryTimes int
 }
 
 func NewPmsManager(ctx *context.Context, pmsUrl string, secretMgr *SecretManager) (*PmsManager, error) {
 	pm := &PmsManager{
-		secretMgr: secretMgr,
+		secretMgr:  secretMgr,
+		retryTimes: 3,
 	}
 	var err error
-	pm.pmsUrls, err = pm.GetPmsList(pmsUrl)
-	go pm.RefreshPmsList()
+	pm.urlProve, err = utils.NewUrlProbe(pmsUrl, pm.ProbeFunction)
 	return pm, err
 }
 
-func (pm *PmsManager) GetPmsUrl() string {
-	return pm.pmsUrls[0].URL
+func (pm *PmsManager) ProbeFunction(url string) ([]string, error) {
+	pmsList, err := pm.GetPmsList(url)
+	if err != nil {
+		log.WithError(err).WithField("pmsUrl", pm.urlProve.GetUrl()).
+			Errorln("failed to get PMS list")
+		return nil, err
+	}
+	urls := make([]string, 0)
+	for _, pms := range pmsList {
+		urls = append(urls, pms.URL)
+	}
+	return urls, nil
 }
 
 func (pm *PmsManager) GetPmsList(pmsUrl string) ([]*PmsUrlStats, error) {
@@ -85,34 +94,22 @@ func (pm *PmsManager) GetPmsList(pmsUrl string) ([]*PmsUrlStats, error) {
 	return curPmsUrls, nil
 }
 
-func (pm *PmsManager) RefreshPmsList() error {
-	pmsList, err := pm.GetPmsList(pm.GetPmsUrl())
-	if err != nil {
-		log.WithError(err).WithField("pmsUrl", pm.GetPmsUrl()).Errorln("failed to get PMS list")
-		return err
-	}
-	for _, pms := range pmsList {
-		startTime := time.Now().UnixMilli()
-		_, err = pm.GetPmsList(pms.URL)
-		if err != nil {
-			log.WithError(err).WithField("pmsUrl", pms.URL).Errorln("failed to refresh PMS")
-			pms.Active = false
-			pms.Msg = err.Error()
-		} else {
-			pms.Active = true
-			pms.Msg = "pms"
+func (pm *PmsManager) GetRoutingResult(bucket, path string, permission []string) (*model.Router, error) {
+	var err error
+	var routing *model.Router
+	for i := 0; i < pm.retryTimes; i++ {
+		routing, err = pm.interGetRoutingResult(bucket, path, permission)
+		if err == nil {
+			return routing, nil
 		}
-		pms.ResponseTime = time.Now().UnixMilli() - startTime
+		log.WithError(err).WithField("bucket", pm.urlProve.GetUrl()).WithField("retry time", i).
+			Errorln("failed get routing result list, retry ...")
 	}
-	sort.Slice(pmsList, func(i, j int) bool {
-		return pmsList[i].ResponseTime < pmsList[j].ResponseTime
-	})
-	pm.pmsUrls = pmsList
-	return nil
+	return routing, err
 }
 
-func (pm *PmsManager) GetRoutingResult(bucket, path string, permission []string) (*model.Router, error) {
-	url := pm.GetPmsUrl() + URL_PATH_STS + bucket + "/sts"
+func (pm *PmsManager) interGetRoutingResult(bucket, path string, permission []string) (*model.Router, error) {
+	url := pm.urlProve.GetUrl() + URL_PATH_STS + bucket + "/sts"
 	strParams := make(map[string]string)
 	if path != "" {
 		strParams["path"] = path
@@ -138,14 +135,28 @@ func (pm *PmsManager) GetRoutingResult(bucket, path string, permission []string)
 	var routing model.Router
 	err := utils.GetAndParseJSON(url, &allParams, header, &routing)
 	if err != nil {
-		go pm.RefreshPmsList()
+		pm.urlProve.ReportFail(url)
 		return nil, err
 	}
 	return &routing, nil
 }
 
 func (pm *PmsManager) GetPcpList(checksum string) (*utils.PcpTable, error) {
-	url := pm.GetPmsUrl() + URL_PATH_PCP
+	var err error
+	var pcpTable *utils.PcpTable
+	for i := 0; i < pm.retryTimes; i++ {
+		pcpTable, err = pm.interGetPcpList(checksum)
+		if err == nil {
+			return pcpTable, nil
+		}
+		log.WithError(err).WithField("bucket", pm.urlProve.GetUrl()).WithField("retry time", i).
+			Errorln("failed get PCP list, retry ...")
+	}
+	return pcpTable, err
+}
+
+func (pm *PmsManager) interGetPcpList(checksum string) (*utils.PcpTable, error) {
+	url := pm.urlProve.GetUrl() + URL_PATH_PCP
 	strParams := make(map[string]string)
 	if checksum != "" {
 		strParams["checksum"] = checksum
@@ -161,7 +172,7 @@ func (pm *PmsManager) GetPcpList(checksum string) (*utils.PcpTable, error) {
 	var pcpHashTable utils.PcpTable
 	err := utils.GetAndParseJSON(url, &allParams, header, &pcpHashTable)
 	if err != nil {
-		go pm.RefreshPmsList()
+		pm.urlProve.ReportFail(url)
 		return nil, err
 	}
 	return &pcpHashTable, nil

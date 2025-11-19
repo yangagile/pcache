@@ -31,12 +31,3 @@ func Test_getPcpList(t *testing.T) {
 		t.Error(err)
 	}
 }
-
-func TestPmsManager_RefreshPmsList(t *testing.T) {
-	ctx := context.Background()
-	pm, _ := NewPmsManager(&ctx, testPmsUrl, nil)
-	err := pm.RefreshPmsList()
-	if err != nil {
-		t.Error("faile to refresh PMS list")
-	}
-}

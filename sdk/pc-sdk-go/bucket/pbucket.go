@@ -135,7 +135,7 @@ func (pb *PBucket) getS3Client() (*s3.Client, error) {
 func (pb *PBucket) getPcpTable(checksum string) *utils.PcpTable {
 	pcpTable, err := pb.pmsMgr.GetPcpList(checksum)
 	if err != nil {
-		log.WithError(err).WithField("iamUrl", pb.pmsMgr.GetPmsUrl()).
+		log.WithError(err).WithField("iamUrl", pb.pmsMgr.urlProve.GetUrl()).
 			Errorln("failed to get pcp table")
 		return nil
 	}

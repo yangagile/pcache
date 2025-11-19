@@ -37,6 +37,7 @@ public class UrlProbe {
     private IUrlProbeFunction probeFunction;
     private final AtomicBoolean isRunning;
     private final AtomicLong lastProbeTime;
+    private final String baseUrl;
 
     public interface IUrlProbeFunction {
         List<String> getUrlList(String url);
@@ -65,6 +66,7 @@ public class UrlProbe {
         this.probeFunction = probeFunction;
         this.isRunning = new AtomicBoolean(false);
         this.lastProbeTime = new AtomicLong(0);
+        this.baseUrl = baseUrl;
     }
 
     public String getUrl() {
@@ -96,6 +98,7 @@ public class UrlProbe {
     }
 
     public void probe(boolean force) {
+
         if (!force && (System.currentTimeMillis() - lastProbeTime.get() < probe_min_period_ms)) {
             return;
         }
@@ -103,8 +106,8 @@ public class UrlProbe {
             LOG.info("test is already running");
             return;
         }
-        Runnable runThread = () -> test();
-        runThread.run();
+        Thread thread = new Thread(() -> test());
+        thread.start();
     }
 
     private List<String> getUrlList(String url) {
@@ -136,6 +139,13 @@ public class UrlProbe {
                 return newUrlList;
             }
         }
+
+        // try base url
+        newUrlList = getUrlList(baseUrl);
+        if (newUrlList != null) {
+            return newUrlList;
+        }
+
         return newUrlList;
     }
 
@@ -174,5 +184,16 @@ public class UrlProbe {
             isRunning.set(false);
             lastProbeTime.set(System.currentTimeMillis());
         }
+    }
+
+    public List<String> GetActiveUrls() {
+        List<String> result = new ArrayList<>();
+        List<UrlStats> tmpList = urlList;
+        for (UrlStats urlStats : tmpList) {
+            if (urlStats.active.get()) {
+                result.add(urlStats.url);
+            }
+        }
+        return result;
     }
 }
