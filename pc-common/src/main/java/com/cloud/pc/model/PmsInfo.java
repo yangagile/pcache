@@ -24,23 +24,35 @@ import java.util.Date;
 @Getter
 @Setter
 public class PmsInfo {
-    private String host;
-    private long   metaVersion;
-    private Date   updateTime;
+    private String  host;
+    private Long    metaVersion;
+    private Boolean leader;
+    private Date    updateTime;
 
     public PmsInfo() {
-
+        this("", 0L, false, new Date());
     }
 
-    public PmsInfo(String host, long version) {
+    public PmsInfo(String host, Long version) {
+        this(host, version, false, new Date());
+    }
+
+    public PmsInfo(String host, long version, Boolean leader, Date updateTime) {
         this.host = host;
         this.metaVersion = version;
-        this.updateTime = new Date();
+        this.leader = leader;
+        this.updateTime = updateTime;
     }
 
     public PmsInfo deepCopy() {
-        PmsInfo newInfo = new PmsInfo(this.host, this.metaVersion);
-        newInfo.updateTime = this.updateTime;
-        return newInfo;
+        return new PmsInfo(this.host, this.metaVersion, this.leader, this.updateTime);
+    }
+
+    public void update(PmsInfo other) {
+        if (other.updateTime.after(this.updateTime)) {
+            this.metaVersion = other.metaVersion;
+            this.leader = other.leader;
+            this.updateTime = other.updateTime;
+        }
     }
 }

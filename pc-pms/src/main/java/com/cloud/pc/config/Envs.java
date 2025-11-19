@@ -61,4 +61,7 @@ public class Envs {
 
     public static Long pmsLiveMaxTime = ComUtils.getProps("pms.max.live.time.sec",
             120L, Long::valueOf);
+
+    public static Boolean enableWrite = ComUtils.getProps("pms.enable.write",
+            false, Boolean::valueOf);
 }

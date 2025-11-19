@@ -25,6 +25,7 @@ import com.cloud.pc.meta.Secret;
 import com.cloud.pc.model.PcPermission;
 import com.cloud.pc.model.routing.RoutingResult;
 import com.cloud.pc.requester.PBucketRequester;
+import com.cloud.pc.service.PmsService;
 import com.cloud.pc.service.SecretService;
 import com.cloud.pc.service.PBucketService;
 import com.cloud.pc.utils.JsonUtils;
@@ -53,6 +54,9 @@ public class PBucketController {
 
     @Autowired
     SecretService secretService;
+
+    @Autowired
+    PmsService pmsService;
 
     @ApiOperation(value = "Query PB Info")
     @GetMapping(value = "/{bucket}/info", produces = "application/json;charset=UTF-8")
@@ -133,6 +137,7 @@ public class PBucketController {
             OpsTrace.set("add-bucket");
             LOG.info("{} requester={} ak={} token={}", OpsTrace.get(), pbRequester, ak, token);
             secretService.checkToken(ak, token, null);
+            pmsService.checkLeader();
             PcMeta pcMeta = pbService.addPBucket(pbRequester.toPBucket());
             LOG.info("{} successfully add bucket {}", OpsTrace.get(), pcMeta);
             return ResponseEntity.ok(pcMeta);

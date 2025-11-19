@@ -20,6 +20,7 @@ import com.cloud.pc.meta.PcMeta;
 import com.cloud.pc.meta.VendorBucket;
 import com.cloud.pc.requester.VendorBucketRequester;
 import com.cloud.pc.requester.VendorRequester;
+import com.cloud.pc.service.PmsService;
 import com.cloud.pc.service.SecretService;
 import com.cloud.pc.service.VendorService;
 import com.cloud.pc.utils.OpsTrace;
@@ -45,6 +46,9 @@ public class VendorController {
     @Autowired
     SecretService secretService;
 
+    @Autowired
+    PmsService pmsService;
+
     @ApiOperation(value = "Add Vendor")
     @PostMapping(value = "/add", produces = "application/json;charset=UTF-8")
     public ResponseEntity<?> adVendor(
@@ -55,6 +59,7 @@ public class VendorController {
             OpsTrace.set("add-vendor");
             LOG.info("{} requester={} ak={} token={}", OpsTrace.get(), vendorRequester, ak, token);
             secretService.checkToken(ak, token, null);
+            pmsService.checkLeader();
             PcMeta pcMeta = vendorService.addVendor(vendorRequester.toVendor());
             LOG.info("{} successfully add vendor {}", OpsTrace.get(), pcMeta);
             return ResponseEntity.ok(pcMeta);
@@ -74,6 +79,7 @@ public class VendorController {
             OpsTrace.set("add-vendor-bucket");
             LOG.info("{} requester={} ak={} token={}", OpsTrace.get(), vbRequester, ak, token);
             secretService.checkToken(ak, token, null);
+            pmsService.checkLeader();
             PcMeta pcMeta = vendorService.addVendorBucket(vbRequester.toVendorBucket());
             LOG.info("{} successfully add vendor bucket {}", OpsTrace.get(), pcMeta);
             return ResponseEntity.ok(pcMeta);

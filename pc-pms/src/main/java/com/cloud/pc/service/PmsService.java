@@ -60,14 +60,19 @@ public class PmsService {
     void init() {
         try {
             metaService.init();
-
+            Boolean leader = false;
+            if (Envs.enableWrite || StringUtils.isBlank(Envs.existingPmsUrls)) {
+                leader = true;
+            }
             PmsInfo PmsInfo = new PmsInfo(Envs.httpHeader + NetUitls.getIp() + ":" + Envs.port + "/",
-                    metaService.getVersion());
+                    metaService.getVersion(), leader, new Date());
             pmsList.add(PmsInfo);
             if (StringUtils.isNotBlank(Envs.existingPmsUrls)) {
-                PmsInfo existingInfo = new PmsInfo(Envs.existingPmsUrls, -1);
+                PmsInfo existingInfo = new PmsInfo(Envs.existingPmsUrls, -1L);
                 existingInfo.setHost(Envs.existingPmsUrls);
-                if(!sendPulseTo(existingInfo)) {
+                PmsPulseInfo pulseInfo = new PmsPulseInfo();
+                pulseInfo.setPmsList(pmsList);
+                if(!sendPulseTo(existingInfo, pulseInfo)) {
                     LOG.error("failed to get meta fomr existing pms url {}, exit application!", Envs.existingPmsUrls);
                     SpringApplication.exit(context, () -> 1);
                 }
@@ -126,50 +131,24 @@ public class PmsService {
         }
     }
 
-    private boolean sendPulseTo(PmsInfo pmsInfo) {
-        String url = pmsInfo.getHost() + "api/v1/pms/pms/pulse";
-        PmsPulseInfo pulseInfo = new PmsPulseInfo();
-        pmsList.get(0).setMetaVersion(metaService.getVersion());
-        pulseInfo.setPmsList(pmsList);
 
-        try {
-            HttpUtils.HttpResponse response = HttpUtils.sendRequest(url,
-                    "POST", getPmsHeader(), null, JsonUtils.toJson(pulseInfo));
-            if (response.getStatusCode() == 200) {
-                LOG.info("pulse info:{}", pulseInfo);
-                return true;
-            } else {
-                LOG.error("failed to send pulse info! error:{}", response.getStatusCode());
-            }
-        } catch (Exception e) {
-            LOG.error("exception to send pulse to {}", url, e);
-        }
-        return false;
-    }
 
     public void receivePulse(PmsPulseInfo pmsPulseInfo) {
-        PmsInfo pmsInfo = pmsPulseInfo.getPmsList().get(0);
-        boolean needUpdateMeta = false;
         List<PmsInfo> pmsInfos = copyPmsList();
-        int i = indexPms(pmsInfos, pmsInfo);
-        if (i < 0) {
-            pmsInfos.add(pmsPulseInfo.getPmsList().get(0));
-        } else {
-            pmsInfos.get(i).setUpdateTime(new Date());
-        }
-        for (i = 1; i < pmsPulseInfo.getPmsList().size(); i++) {
+        for (int i = 0; i < pmsPulseInfo.getPmsList().size(); i++) {
+            PmsInfo pmsInfo = pmsPulseInfo.getPmsList().get(i);
             int index = indexPms(pmsInfos, pmsInfo);
+            // index = 0 is current node, ignore
             if (index < 0) {
                 pmsInfos.add(pmsInfo);
+            } else if (index > 0){
+                pmsInfos.get(index).update(pmsInfo);
             }
-        }
-        if (pmsInfo.getMetaVersion() > pmsInfos.get(0).getMetaVersion()) {
-            needUpdateMeta = true;
         }
         pmsList = pmsInfos;
 
-        if (needUpdateMeta) {
-            syncMetaFrom(pmsInfo);
+        if (pmsPulseInfo.getPmsList().get(0).getMetaVersion() > pmsInfos.get(0).getMetaVersion()) {
+            syncMetaFrom(pmsPulseInfo.getPmsList().get(0));
         }
     }
 
@@ -200,10 +179,56 @@ public class PmsService {
         }
     }
 
+    private boolean sendPulseTo(PmsInfo pmsInfo, PmsPulseInfo pulseInfo) {
+        String url = pmsInfo.getHost() + "api/v1/pms/pms/pulse";
+        try {
+            HttpUtils.HttpResponse response = HttpUtils.sendRequest(url,
+                    "POST", getPmsHeader(), null, JsonUtils.toJson(pulseInfo));
+            if (response.getStatusCode() == 200) {
+                LOG.info("pulse info:{}", pulseInfo);
+                return true;
+            } else {
+                LOG.error("failed to send pulse info! error:{}", response.getStatusCode());
+            }
+        } catch (Exception e) {
+            LOG.error("exception to send pulse to {}", url, e);
+        }
+        return false;
+    }
+
     @Scheduled(fixedRateString = "${pc.pms.pulse.interval.millis:10000}")
     public void sendPulse() {
-        for (int i = 1; i < pmsList.size(); i++) {
-            sendPulseTo(pmsList.get(i));
+        List<PmsInfo> pmsInfos = copyPmsList();
+        pmsInfos.get(0).setMetaVersion(metaService.getVersion());
+        pmsInfos.get(0).setUpdateTime(new Date());
+
+        PmsPulseInfo pulseInfo = new PmsPulseInfo();
+        pulseInfo.setPmsList(pmsInfos);
+
+        for (int i = 1; i < pmsInfos.size(); i++) {
+            sendPulseTo(pmsInfos.get(i), pulseInfo);
+        }
+    }
+
+    public synchronized void enableLeader(Boolean enableLeader) {
+        if (enableLeader == true) {
+            if (pmsList.get(0).getLeader()) {
+                LOG.info("{} already is leader", pmsList.get(0).getHost());
+                return;
+            }
+            for (int i = 1; i < pmsList.size(); i++) {
+                if (pmsList.get(i).getLeader()) {
+                    throw new RuntimeException("leader existing " + pmsList.get(i).getHost());
+                }
+            }
+        }
+        pmsList.get(0).setLeader(enableLeader);
+        pmsList.get(0).setUpdateTime(new Date());
+    }
+
+    public void checkLeader() {
+        if (!pmsList.get(0).getLeader()) {
+            throw new RuntimeException("can't write on NO leader node" + pmsList.get(0).getHost());
         }
     }
 }

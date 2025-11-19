@@ -130,4 +130,25 @@ public class PmsController {
         LOG.warn("{} failed to dump meta with error:", OpsTrace.get(), respMsg);
         return ResponseEntity.internalServerError().body(respMsg);
     }
+
+    @ApiOperation(value = "PCP Pulse")
+    @GetMapping(value = "/leader/enable", produces = "application/json;charset=UTF-8")
+    public ResponseEntity<?> enableLeader(
+            @RequestParam(value = "enableWrite", defaultValue = "false") Boolean enableLeader,
+            @RequestHeader(required = false, value = "X-AK") String ak,
+            @RequestHeader(required = false, value = "X-TOKEN") String token) {
+        String errorMsg;
+        try {
+            OpsTrace.set("enable-leader");
+            LOG.info("{} enableLeader={} ak={} token={}", OpsTrace.get(), enableLeader, ak, token);
+            secretService.checkToken(ak, token, null);
+            pmsService.enableLeader(enableLeader);
+            LOG.info("{} success", OpsTrace.get() );
+            return ResponseEntity.ok("OK");
+        } catch (Exception e) {
+            errorMsg = e.getMessage();
+            LOG.error("{} exception to deal with PCP pulse", OpsTrace.get(), e);
+        }
+        return ResponseEntity.internalServerError().body(errorMsg);
+    }
 }

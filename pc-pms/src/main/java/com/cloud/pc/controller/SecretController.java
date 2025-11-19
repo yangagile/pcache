@@ -23,6 +23,7 @@ import com.cloud.pc.meta.Secret;
 import com.cloud.pc.requester.IamBucketRequester;
 import com.cloud.pc.requester.NewSecretRequester;
 import com.cloud.pc.requester.NewTokenRequester;
+import com.cloud.pc.service.PmsService;
 import com.cloud.pc.service.SecretService;
 import com.cloud.pc.utils.JsonUtils;
 import com.cloud.pc.utils.OpsTrace;
@@ -45,6 +46,9 @@ public class SecretController {
     @Autowired
     SecretService secretService;
 
+    @Autowired
+    PmsService pmsService;
+
     @ApiOperation(value = "Add Secret")
     @PostMapping(value = "/add", produces = "application/json;charset=UTF-8")
     public ResponseEntity<?> addSecret(
@@ -56,6 +60,7 @@ public class SecretController {
             OpsTrace.set("add-secret");
             LOG.info("{} requester={} ak={} token={}", OpsTrace.get(), newSecretRequester, ak, token);
             secretService.checkToken(ak, token, null);
+            pmsService.checkLeader();
             Secret secret = secretService.newSecret(newSecretRequester);
             LOG.info("{} success", OpsTrace.get());
             return ResponseEntity.ok(secret);
@@ -76,6 +81,7 @@ public class SecretController {
             OpsTrace.set("add-policy");
             LOG.info("{} requester={} ak={} token={}", OpsTrace.get(), iamPolicyRequester, ak, token);
             Secret secret = secretService.checkToken(ak, token, null);
+            pmsService.checkLeader();
             if (secret != null) {
                 IamUtils.checkAction(JsonUtils.fromJson(secret.getIam(), IamPolicy.class), "pms:admin");
             }
