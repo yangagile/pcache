@@ -19,8 +19,8 @@ package bucket
 import (
 	"context"
 	log "github.com/sirupsen/logrus"
-	"testdisk/model"
-	"testdisk/utils"
+	"github.com/yangagile/pcache/sdk/pc-sdk-go/model"
+	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
 )
 
 const URL_PATH_STS = "/api/v1/pb/"
@@ -109,7 +109,7 @@ func (pm *PmsManager) GetRoutingResult(bucket, path string, permission []string)
 }
 
 func (pm *PmsManager) interGetRoutingResult(bucket, path string, permission []string) (*model.Router, error) {
-	url := pm.urlProve.GetUrl() + URL_PATH_STS + bucket + "/sts"
+	url := utils.MergePath(pm.urlProve.GetUrl(), URL_PATH_STS+bucket+"/sts")
 	strParams := make(map[string]string)
 	if path != "" {
 		strParams["path"] = path
@@ -156,7 +156,7 @@ func (pm *PmsManager) GetPcpList(checksum string) (*utils.PcpTable, error) {
 }
 
 func (pm *PmsManager) interGetPcpList(checksum string) (*utils.PcpTable, error) {
-	url := pm.urlProve.GetUrl() + URL_PATH_PCP
+	url := utils.MergePath(pm.urlProve.GetUrl(), URL_PATH_PCP)
 	strParams := make(map[string]string)
 	if checksum != "" {
 		strParams["checksum"] = checksum

@@ -23,13 +23,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	log "github.com/sirupsen/logrus"
+	"github.com/yangagile/pcache/sdk/pc-sdk-go/model"
+	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
-	"testdisk/model"
-	"testdisk/utils"
 )
 
 type PBucket struct {

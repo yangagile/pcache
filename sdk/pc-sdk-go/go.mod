@@ -1,4 +1,4 @@
-module testdisk
+module github.com/yangagile/pcache/sdk/pc-sdk-go
 
 go 1.23.9
 

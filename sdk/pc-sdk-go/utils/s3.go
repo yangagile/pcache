@@ -22,10 +22,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	pclient "testdisk/model"
+	"github.com/yangagile/pcache/sdk/pc-sdk-go/model"
 )
 
-func NewS3ClientWithSTS(ctx context.Context, stsInfo *pclient.StsInfo) (*s3.Client, error) {
+func NewS3ClientWithSTS(ctx context.Context, stsInfo *model.StsInfo) (*s3.Client, error) {
 	creds := credentials.NewStaticCredentialsProvider(stsInfo.AccessKey,
 		stsInfo.AccessSecret, stsInfo.SecurityToken)
 

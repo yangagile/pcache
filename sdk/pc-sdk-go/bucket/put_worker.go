@@ -24,12 +24,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	log "github.com/sirupsen/logrus"
+	"github.com/yangagile/pcache/sdk/pc-sdk-go/model"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
 	"sync"
-	"testdisk/model"
 	"time"
 )
 
