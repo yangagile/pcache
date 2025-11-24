@@ -16,17 +16,34 @@
 
 package com.cloud.pc.model;
 
-import org.junit.Assert;
 import org.junit.Test;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class PCPathTest {
     @Test
-    public void PCPathTest() {
-        PcPath path = new PcPath("/test-bucket/test/file.00000001");
+    public void Test_MultipartFile() {
+        String strPath = "test-bucket/test/file.dat.1_10";
+        PcPath path = new PcPath(strPath);
+        assertFalse(path.isSingleFile());
+        assertEquals("test-bucket", path.getBucket());
+        assertEquals("test/file.dat", path.getKey());
+        assertEquals(1, path.getNumber());
+        assertEquals(10, path.getTotalNumber());
 
-        Assert.assertEquals("test-bucket", path.getBucket());
-        Assert.assertEquals("test/file", path.getKey());
-        Assert.assertEquals(1, path.getNo());
+        PcPath path2 = new PcPath(path.getBucket(),  path.getKey(), path.getNumber(), path.getTotalNumber());
+        assertEquals(strPath, path2.toString());
+    }
 
+    @Test
+    public void Test_SingleFile() {
+        PcPath path = new PcPath("/test-bucket/test/file.dat.0_1");
+        assertTrue(path.isSingleFile());
+        assertEquals("test-bucket", path.getBucket());
+        assertEquals("test/file.dat", path.getKey());
+        assertEquals(0, path.getNumber());
+        assertEquals(1, path.getTotalNumber());
     }
 }

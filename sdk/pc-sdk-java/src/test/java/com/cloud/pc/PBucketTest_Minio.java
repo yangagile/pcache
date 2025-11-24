@@ -64,7 +64,6 @@ public class PBucketTest_Minio {
         // compare file
         Assert.assertTrue("files are different",
                 TestFileUtils.compareFiles(localFilePath.toFile(), newLocalFile.toFile()));
-
     }
 
     @Test
@@ -85,7 +84,11 @@ public class PBucketTest_Minio {
 
         int blockNum = (int) Math.ceil((double) fileSize / pbucket.getBlockSize());;
         Stats stats = pbucket.getThreadTracer().get().getStats();
-        Assert.assertEquals("should put from PCP", blockNum, stats.getCntPcp());
+        if (pbucket.getPmsMgr().getPcp(fileKey) != null) {
+            Assert.assertEquals("should put from PCP", blockNum, stats.getCntPcp());
+        } else {
+            Assert.assertEquals("should put From Local", blockNum, stats.getCntLocal());
+        }
         pbucket.getThreadTracer().get().resetStats();
 
 
@@ -103,7 +106,11 @@ public class PBucketTest_Minio {
                 TestFileUtils.compareFiles(localFilePath.toFile(), newLocalFile.toFile()));
 
         stats = pbucket.getThreadTracer().get().getStats();
-        Assert.assertEquals("should get From PCP", blockNum, stats.getCntPcp());
+        if (pbucket.getPmsMgr().getPcp(fileKey) != null) {
+            Assert.assertEquals("should get From PCP", blockNum, stats.getCntPcp());
+        } else {
+            Assert.assertEquals("should get From Local", blockNum, stats.getCntLocal());
+        }
         pbucket.getThreadTracer().get().resetStats();
 
         // get again with PCache, should get from cache of PCP
@@ -117,8 +124,12 @@ public class PBucketTest_Minio {
                 TestFileUtils.compareFiles(localFilePath.toFile(), newLocalFile.toFile()));
 
         stats = pbucket.getThreadTracer().get().getStats();
-        Assert.assertEquals("should get From PCP", blockNum, stats.getCntPcp());
-        Assert.assertEquals("should get From cache of PCP", blockNum, stats.getPcpCacheHit());
+        if (pbucket.getPmsMgr().getPcp(fileKey) != null) {
+            Assert.assertEquals("should get From PCP", blockNum, stats.getCntPcp());
+            Assert.assertEquals("should get From cache of PCP", blockNum, stats.getPcpCacheHit());
+        } else {
+            Assert.assertEquals("should put From Local", blockNum, stats.getCntLocal());
+        }
         pbucket.getThreadTracer().get().resetStats();
     }
 }

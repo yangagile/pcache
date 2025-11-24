@@ -89,14 +89,19 @@ public class FileUtils {
         }
     }
 
-    public static void mkParentDir(Path path) {
-        Path parentPath = path.getParent();
-        if (parentPath != null) {
-            File parentDirectory = parentPath.toFile();
-            if (parentDirectory != null && !parentDirectory.exists()) {
-                parentDirectory.mkdirs();
-            }
+    public static boolean mkParentDir(Path path) {
+        if (path == null || path.toString().isEmpty()) {
+            return false;
         }
+        Path parentPath = path.getParent();
+        File parentDirectory = parentPath.toFile();
+        if (parentDirectory.exists()) {
+            return true;
+        }
+        if (parentDirectory != null) {
+            return parentDirectory.mkdirs();
+        }
+        return false;
     }
 
     public static String formatDataSize(long bytes) {

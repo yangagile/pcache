@@ -26,6 +26,7 @@ import lombok.Setter;
 import lombok.ToString;
 
 import java.io.BufferedInputStream;
+import java.io.File;
 import java.io.FileOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -33,6 +34,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.CountDownLatch;
 import com.cloud.pc.model.StsInfo;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.exception.SdkClientException;
@@ -48,53 +50,66 @@ public class GetTask implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(GetTask.class);
     private final CountDownLatch latch;
     private S3Client s3Client;
-    private String fileUrl;
-    private String localFile;
     private StsInfo stsInfo;
-    private Stats stats;
+    private String pcpUrl;
+    private PcPath pcPath;
+    private String localFile;
+    private long size;
     private int blockSize;
+    private String eTag;
+    private Stats stats;
 
     public GetTask(CountDownLatch latch, S3Client s3Client, StsInfo stsInfo,
-                   String fileUrl, String localFile, int blockSize) {
+                   String pcpUrl, PcPath pcPath, String localFile, long size, int blockSize) {
         this.latch = latch;
         this.s3Client = s3Client;
         this.stsInfo = stsInfo;
-        this.fileUrl = fileUrl;
+        this.pcpUrl = pcpUrl;
+        this.pcPath = pcPath;
         this.localFile = localFile;
+        this.size = size;
+        this.blockSize = blockSize;
         this.stats = new Stats();
     }
 
     @Override
     public void run() {
-       try {
+        try {
             boolean getLocal = true;
-            if (fileUrl.startsWith("http")) {
+            if (StringUtils.isNotBlank(pcpUrl)) {
                 try {
                     getBlockFromPcp();
                     getLocal =false;
                     stats.addPcp();
                 }  catch (Exception e) {
-                    LOG.error("exception to get block from PCP:{}", fileUrl, e);
+                    LOG.error("exception to get block from PCP:{}", pcpUrl, e);
                 }
             }
             if (getLocal) {
-                getBlockFromLocal();
+                if (pcPath.isSingleFile()) {
+                    getFileFromLocal();
+                } else {
+                    getBlockFromLocal();
+                }
                 stats.addLocal();
             }
         } catch (Exception e) {
-           LOG.error("exception to get block from local, key{}", fileUrl, e);
-           stats.addFail();
+            LOG.error("exception to get block from local, key{}", pcpUrl, e);
+            stats.addFail();
         } finally {
-            latch.countDown();
+            if (latch != null) {
+                latch.countDown();
+            }
         }
     }
 
     private void getBlockFromPcp() throws Exception {
-        URL url = new URL(fileUrl);
+        URL url = new URL(FileUtils.mergePath(pcpUrl, pcPath.toString()));
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setRequestMethod("GET");
-        connection.setRequestProperty("X-STS",
-                JsonUtils.toJson(stsInfo));
+        connection.setRequestProperty("X-STS", JsonUtils.toJson(stsInfo));
+        connection.setRequestProperty("X-DATA-SIZE", String.valueOf(size));
+        connection.setRequestProperty("X-BLOCK-SIZE", String.valueOf(blockSize));
         connection.setConnectTimeout(5000);
         connection.setReadTimeout(60000);
 
@@ -107,22 +122,23 @@ public class GetTask implements Runnable {
             }
             String cacheHit = connection.getHeaderField("X-CACHE-HIT");
             stats.addPcpCacheHit(Integer.parseInt(cacheHit));
+            eTag = "cache";
         } finally {
             connection.disconnect();
         }
-        LOG.info("finished get file block: {}", fileUrl);
+        LOG.info("finished get file block: {}", url);
     }
 
     private void getBlockFromLocal() throws Exception{
-        LOG.info("get block from load key:{} localfile:{} fullKey={}", fileUrl, localFile);
-        PcPath pcPath = new PcPath(fileUrl);
-        long pos = (pcPath.getNo()-1)* blockSize;
-        String range = String.format("bytes=%d-%d",pos, pos + pcPath.getSize()-1);
+        LOG.info("get block {} to local file {}", pcPath.getKey() , localFile);
+        //PcPath pcPath = new PcPath(fileUrl);
+        long pos = (pcPath.getNumber()) * blockSize;
+        String range = String.format("bytes=%d-%d",pos, pos + size -1);
 
         Path localPath = Paths.get(localFile);
         FileUtils.mkParentDir(localPath);
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-                .bucket(stsInfo.getName())
+                .bucket(stsInfo.getBucketName())
                 .key(pcPath.getKey())
                 .range(range)
                 .build();
@@ -134,5 +150,18 @@ public class GetTask implements Runnable {
             LOG.error("failed to get object！for invalid response {}", res);
             throw SdkClientException.create("invalid response");
         }
+    }
+
+    private void getFileFromLocal() throws Exception {
+        LOG.info("get file {} to local file {} ", pcPath.getKey(), localFile);
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder().
+                bucket(stsInfo.getBucketName()).key(pcPath.getKey()).build();
+        GetObjectResponse res = s3Client.getObject(
+                getObjectRequest, ResponseTransformer.toFile(new File(localFile)));
+        if (!S3Utils.isGetObjectSuccessful(res)) {
+            LOG.error("failed to get object！for invalid response {}", res);
+            throw SdkClientException.create("invalid response");
+        }
+        eTag = res.eTag();
     }
 }

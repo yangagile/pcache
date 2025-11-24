@@ -18,6 +18,7 @@ package com.cloud.pc;
 
 import com.cloud.pc.entity.*;
 import com.cloud.pc.entity.Stats;
+import com.cloud.pc.model.PcPath;
 import com.cloud.pc.model.PcPermission;
 import com.cloud.pc.model.StsInfo;
 import com.cloud.pc.model.routing.RoutingResult;
@@ -33,12 +34,9 @@ import com.cloud.pc.utils.S3Utils;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.exception.SdkClientException;
-import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 
@@ -61,8 +59,12 @@ public class PBucket {
 
     private PmsMgr pmsMgr = null;
 
-    private BucketInfo bucketInfo;
     private long updateTime = 0L;
+
+    private String name;
+
+    private BucketInfo bucketInfo;
+
     public static long bucketInfoRefreshTimeMs = ComUtils.getProps("pc.bucket.refresh.time.ms",
             300*1000L, Long::valueOf);
 
@@ -103,7 +105,6 @@ public class PBucket {
     public int cacheBucketInfoSeconds = ComUtils.getProps("pc.cache.bucket.info.seconds",
             300, Integer::valueOf);
 
-    private String name;
 
     public PBucket(String bucketName) {
         this.name = bucketName;
@@ -181,11 +182,10 @@ public class PBucket {
                 userMetas.put("checksum-crc32", checksum);
             }
             S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
-            stsInfo.setKey(fullKey.toString());
             if (enablePCache && file.length() > blockSize) {
                 response = putObjectPCache(s3Client, stsInfo, fullKey.toString(), file, userMetas);
             } else {
-                response = putObjectNormal(s3Client, stsInfo, fullKey.toString(), file, userMetas);
+                response = putObjectSingle(s3Client, stsInfo, fullKey.toString(), file, userMetas);
             }
             if (!S3Utils.isPutObjectSuccessful(response)) {
                 LOG.error("failed to put object for invalid eTag!");
@@ -201,26 +201,19 @@ public class PBucket {
         }
     }
 
-    private PutObjectResponse putObjectNormal(S3Client s3Client, StsInfo stsInfo, String fullKey,
+    private PutObjectResponse putObjectSingle(S3Client s3Client, StsInfo stsInfo, String fullKey,
                                               File file, Map<String, String> userMetas) {
-        PutObjectRequest.Builder builder = PutObjectRequest.builder();
-        InputStream inputStream;
-        try {
-            inputStream = new FileInputStream(file);
-        } catch (FileNotFoundException e) {
-            LOG.error("input file:{} is not found!", file);
-            throw SdkClientException.create("invalid input file", e);
-        }
+        String host = pmsMgr.getPcp(fullKey);
+        PcPath pcPath = new PcPath(name, fullKey, 0, 1);
 
-        PutObjectRequest putObjectRequest = builder.bucket(stsInfo.getName())
-                .contentLength(file.length())
-                .metadata(userMetas)
-                .contentDisposition(S3Utils.getContentDispositionHeaderValue(
-                        contentDispositionDefault, Paths.get(fullKey).getFileName().toString()))
-                .key(fullKey.toString()).build();
+        PutTask task = new PutTask(null, s3Client, stsInfo, host, pcPath,
+                userMetas, file.toString(), file.length(), blockSize, null);
+        task.run();
+        threadTracer.get().getStats().add(task.getStats());
+        PutObjectResponse response = PutObjectResponse.builder()
+                .eTag(task.getETag())
+                .build();
 
-        RequestBody requestBody = RequestBody.fromInputStream(inputStream, file.length());
-        PutObjectResponse response = s3Client.putObject(putObjectRequest, requestBody);
         return response;
     }
 
@@ -239,7 +232,7 @@ public class PBucket {
             long leftSize = file.length();
 
             CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().
-                    bucket(stsInfo.getName()).key(fullKey).metadata(userMetas).build();
+                    bucket(stsInfo.getBucketName()).key(fullKey).metadata(userMetas).build();
             CreateMultipartUploadResponse response = s3Client.createMultipartUpload(request);
             String uploadId = response.uploadId();
 
@@ -248,29 +241,20 @@ public class PBucket {
 
                 partSize = Math.min(blockSize, leftSize);
                 String host = pmsMgr.getPcp(fullKey + i);
-                String fileUrl;
-                if (host != null) {
-                    fileUrl = String.format("%s%s/%s.%08d_%d",
-                            host, name, fullKey, i+1, partSize);
-                } else {
-                    fileUrl = String.format("%s/%s.%08d_%d",
-                            fullKey, name, i+1, partSize);
-                }
-                PutTask task = new PutTask(latch, s3Client, i+1, i * blockSize, partSize, stsInfo);
-                task.setFileUrl(fileUrl);
-                task.setLocalFile(file.getPath());
-                task.setUploadId(uploadId);
+                PcPath pcPath = new PcPath(name, fullKey, i, blockNum);
+
+                PutTask task = new PutTask(latch, s3Client, stsInfo, host, pcPath,
+                        null, file.toString(), partSize, blockSize, uploadId);
                 taskInfoList.add(task);
                 parallelManager.put(task);
                 leftSize -= partSize;
             }
-
             awaitTasks(latch);
             Stats stats = threadTracer.get().getStats();
             List<CompletedPart> completedParts = new ArrayList<>();
             for(PutTask taskInfo : taskInfoList) {
                 CompletedPart completedPart = CompletedPart.builder()
-                        .partNumber(taskInfo.getPartNumber())
+                        .partNumber((int)taskInfo.getPcPath().getNumber()+1)
                         .eTag(taskInfo.getETag())
                         .build();
                 completedParts.add(completedPart);
@@ -279,7 +263,7 @@ public class PBucket {
 
             LOG.debug("finished all tasks, total number", file.length()/blockSize+1);
             CompleteMultipartUploadRequest completeRequest = CompleteMultipartUploadRequest.builder()
-                    .bucket(stsInfo.getName()).key(fullKey).uploadId(uploadId)
+                    .bucket(stsInfo.getBucketName()).key(fullKey).uploadId(uploadId)
                     .multipartUpload(CompletedMultipartUpload.builder().parts(completedParts).build()).build();
             CompleteMultipartUploadResponse completeResponse = s3Client.completeMultipartUpload(completeRequest);
             return S3Utils.convertToPutObjectResponse(completeResponse);
@@ -313,9 +297,9 @@ public class PBucket {
             GetObjectResponse response;
             S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
             if (enablePCache) {
-                response = getObjectPCache(s3Client, tempPath, stsInfo, stsInfo.getKey());
+                response = getObjectPCache(s3Client, tempPath, stsInfo, fileKey);
             } else {
-                response =  getObjectNormal(s3Client, tempPath, stsInfo, stsInfo.getKey());
+                response =  getObjectSingle(s3Client, tempPath, stsInfo, fileKey);
             }
             stats.finish(new File(localFilePath).length());
             LOG.info("successfully get file from {}/{} to {} {}", name, fileKey, localFilePath, stats);
@@ -337,16 +321,15 @@ public class PBucket {
         }
     }
 
-    private GetObjectResponse getObjectNormal(
-            S3Client s3Client, Path localFilePath, StsInfo stsInfo, String fullKey) {
-
-        GetObjectRequest getObjectRequest = GetObjectRequest.builder().bucket(stsInfo.getName()).key(fullKey).build();
-        GetObjectResponse res = s3Client.getObject(getObjectRequest, ResponseTransformer.toFile(localFilePath));
-        if (!S3Utils.isGetObjectSuccessful(res)) {
-            LOG.error("failed to get object！for invalid response {}", res);
-            throw SdkClientException.create("invalid response");
-        }
-        return res;
+    private GetObjectResponse getObjectSingle(S3Client s3Client, Path localFilePath,
+                                              StsInfo stsInfo, String fullKey) {
+        String host = pmsMgr.getPcp(fullKey);
+        PcPath pcPath = new PcPath(name, fullKey, 0, 1);
+        GetTask taskInfo = new GetTask(null, s3Client, stsInfo, host, pcPath,
+                localFilePath.toString(), localFilePath.toFile().length(), blockSize);
+        taskInfo.run();
+        threadTracer.get().getStats().add(taskInfo.getStats());
+        return GetObjectResponse.builder().eTag(taskInfo.getETag()).build();
     }
 
     private GetObjectResponse getObjectPCache(
@@ -356,7 +339,7 @@ public class PBucket {
             if (parallelManager == null) {
                 parallelManager = new ParallelManager();
             }
-            headInfo = S3Utils.headObject(s3Client, stsInfo.getName(), fullKey);
+            headInfo = S3Utils.headObject(s3Client, stsInfo.getBucketName(), fullKey);
             long fileSize = headInfo.contentLength();
             LOG.info("file sie: {}", headInfo.contentLength());
 
@@ -366,22 +349,15 @@ public class PBucket {
             long leftSize = fileSize;
             List<String> localFilePaths = new ArrayList<>();
             List<GetTask> taskList = new ArrayList<>();
-            for (int i = 1; i < blockNum+1; i++) {
+            for (int i = 0; i < blockNum; i++) {
                 partSize = Math.min(blockSize,leftSize);
                 leftSize -= partSize;
                 String host = pmsMgr.getPcp(fullKey + i);
-                String fileUrl;
-                if (host != null) {
-                    fileUrl = String.format("%s%s/%s.%08d_%d",
-                            host, name, fullKey, i, partSize);
-                } else {
-                    fileUrl = String.format("%s/%s.%08d_%d",
-                            name, fullKey, i, partSize);
-                }
-                String localFile = String.format("%s.%08d_%d", localFilePath, i, partSize);
+                String localFile = String.format("%s.%d_%d", localFilePath, i, blockNum);
                 localFilePaths.add(localFile);
 
-                GetTask taskInfo = new GetTask(latch, s3Client, stsInfo, fileUrl, localFile, blockSize);
+                PcPath pcPath = new PcPath(name, fullKey, i, blockNum);
+                GetTask taskInfo = new GetTask(latch, s3Client, stsInfo, host, pcPath, localFile, partSize, blockSize);
                 taskList.add(taskInfo);
                 parallelManager.put(taskInfo);
             }
@@ -415,7 +391,6 @@ public class PBucket {
                 parentPath, Collections.singletonList(PcPermission.GetObject),
                 stsDurationSeconds);
         StsInfo stsInfo = routingResult.getSTS();
-        stsInfo.setKey(fullKey.toString());
         return stsInfo;
     }
 }

@@ -25,8 +25,8 @@ import org.apache.hadoop.fs.Path;
 public class PcPath {
     private String bucket;
     private String key;
-    private long no;
-    private long size;
+    private long number;
+    private long totalNumber;
     public PcPath(String path) {
         int pos = 0;
         if (path.startsWith(Path.SEPARATOR)) {
@@ -39,12 +39,25 @@ public class PcPath {
 
         this.key = path.substring(pos, pos2);
         String[] cols = path.substring(pos2 + 1).split("_");
-        this.no = Long.parseLong(cols[0]);
-        this.size = Long.parseLong(cols[1]);
+        if (cols.length > 1) {
+            this.number = Long.parseLong(cols[0]);
+            this.totalNumber = Long.parseLong(cols[1]);
+        }
+    }
+
+    public PcPath(String bucket, String key, long number, long totalNumber) {
+        this.bucket = bucket;
+        this.key = key;
+        this.number = number;
+        this.totalNumber = totalNumber;
     }
 
     @Override
     public String toString() {
-        return String.format("%s/%s%08d_%d", bucket, key, no, size);
+        return String.format("%s/%s.%d_%d", bucket, key, number, totalNumber);
+    }
+
+    public boolean isSingleFile() {
+        return totalNumber == 1;
     }
 }

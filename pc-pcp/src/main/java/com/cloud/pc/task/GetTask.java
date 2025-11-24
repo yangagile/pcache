@@ -36,7 +36,6 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
 import java.io.*;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import static com.cloud.pc.utils.HttpHelper.sendError;
@@ -46,27 +45,33 @@ import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
 public class GetTask implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(GetTask.class);
 
-    ChannelHandlerContext ctx;
-    FullHttpRequest request;
-    String path;
-    String uri;
+    private ChannelHandlerContext ctx;
+    private FullHttpRequest request;
+    private S3Client s3Client;
+    private StsInfo stsInfo;
+    private String localFile;
+    private PcPath pcPath;
+    private long size;
+    private long blockSize;
 
-    public GetTask(ChannelHandlerContext ctx,  FullHttpRequest request, String path, String uri) {
+    public GetTask(ChannelHandlerContext ctx, FullHttpRequest request, S3Client s3Client,
+                   StsInfo stsInfo, String localFile, PcPath pcPath, long size, long blockSize) {
         this.ctx = ctx;
         this.request = request;
-        this.path = path;
-        this.uri = uri;
-
+        this.s3Client = s3Client;
+        this.stsInfo = stsInfo;
+        this.localFile = localFile;
+        this.pcPath = pcPath;
     }
     @Override
     public void run() {
-        File file = new File(path);
+        File file = new File(localFile);
         if (file.isDirectory()) {
             if (Envs.enableListDir) {
-                if (path.endsWith("/")) {
-                    HttpHelper.sendFileListing(ctx, file, uri);
+                if (localFile.endsWith("/")) {
+                    HttpHelper.sendFileListing(ctx, file, localFile);
                 } else {
-                    HttpHelper.sendRedirect(ctx, uri + '/');
+                    HttpHelper.sendRedirect(ctx, localFile + '/');
                 }
             } else {
                 LOG.error("[request] list dir={} is not allowed", file);
@@ -83,18 +88,16 @@ public class GetTask implements Runnable {
         }
 
         if (!file.exists()) {
-            String sts = request.headers().get("X-STS");
-            StsInfo stsInfo = JsonUtils.fromJson(sts, StsInfo.class);
-            getAndSend(ctx, response, stsInfo, path, uri);
+            getAndSend(response);
         } else {
-            sendFromLocal(ctx, file.toString());
+            sendFromLocal();
         }
     }
 
-    private void sendFromLocal(ChannelHandlerContext ctx, String file) {
-        LOG.info("[sendFromLocal] file={}", file);
+    private void sendFromLocal() {
+        LOG.info("[sendFromLocal] file={} ", localFile);
         try {
-            byte[] fileData = Files.readAllBytes(Paths.get(file));
+            byte[] fileData = Files.readAllBytes(Paths.get(localFile));
 
             ByteBuf buf = Unpooled.wrappedBuffer(fileData);
             FullHttpResponse respose = new DefaultFullHttpResponse(
@@ -113,33 +116,27 @@ public class GetTask implements Runnable {
         }
     }
 
-    private void getAndSend(ChannelHandlerContext ctx, HttpResponse response,
-                            StsInfo stsInfo, String localFilePath, String fullKey) {
-        LOG.info("[getAndSend] stsInfo={} localFilePath={} fullKey={}", stsInfo, localFilePath, fullKey);
+    private void getAndSend(HttpResponse response) {
+        LOG.info("[getAndSend] localFile={} fullKey={}", stsInfo, localFile, pcPath);
 
-        PcPath pcPath = new PcPath(fullKey);
-        long pos = (pcPath.getNo()-1)* Envs.blockSize;
-        String range = String.format("bytes=%d-%d",pos, pos + pcPath.getSize()-1);
+        long pos = (pcPath.getNumber()-1)* blockSize;
+        String range = String.format("bytes=%d-%d",pos, pos + size - 1);
 
-        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, pcPath.getSize());
+        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, size);
         response.headers().set("X-CACHE-HIT",0);
         ctx.write(response);
 
-        Path localPath = Paths.get(localFilePath);
-        S3Client s3Client = null;
         FileOutputStream fos = null;
         try {
-            fos = new FileOutputStream(localFilePath);
+            fos = new FileOutputStream(localFile);
         } catch (FileNotFoundException e) {
-            LOG.error("[getAndSend] failed to open file {} for write", localFilePath, e);
+            LOG.error("[getAndSend] failed to open file {} for write", localFile, e);
             sendError(ctx, NOT_FOUND);
         }
         try {
-            FileUtils.mkParentDir(localPath);
-            s3Client = S3ClientCache.buildS3Client(stsInfo, false);
-
+            FileUtils.mkParentDir(Paths.get(localFile));
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-                    .bucket(stsInfo.getName())
+                    .bucket(stsInfo.getBucketName())
                     .key(pcPath.getKey())
                     .range(range)
                     .build();
@@ -166,7 +163,7 @@ public class GetTask implements Runnable {
             try {
                 fos.close();
             } catch (IOException e) {
-                LOG.info("exception to close file {}", localFilePath, e);
+                LOG.info("exception to close file {}", localFile, e);
             }
         }
     }

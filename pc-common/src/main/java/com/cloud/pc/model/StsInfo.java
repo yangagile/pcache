@@ -24,17 +24,11 @@ import lombok.ToString;
 @Setter
 @ToString
 public class StsInfo {
-
-    private int id;
-    private String name;
+    private String BucketName;
     private String region;
     private String path;
-    private String key;
     private String storageType;
-    private String bucketType;
     private String endpoint;
-
-    private String s3Endpoint;
     private String cdnEndpoint;
     private String accessKey;
     private String accessSecret;

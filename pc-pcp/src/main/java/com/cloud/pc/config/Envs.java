@@ -36,7 +36,7 @@ public class Envs {
     // data
     public static String dataDir = ComUtils.getProps("pcp.data.dir",
             "/var/data", String::valueOf);
-    public static int blockSize = ComUtils.getProps("pcp.block.size",
+    public static int defaultBlockSize = ComUtils.getProps("pcp.block.size",
             5 * 1024 * 1024, Integer::valueOf);
     public static Boolean enableListDir = ComUtils.getProps("pcp.enable.list.dir",
             true, Boolean::valueOf);

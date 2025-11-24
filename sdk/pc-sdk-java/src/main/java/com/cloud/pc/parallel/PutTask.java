@@ -17,21 +17,27 @@
 package com.cloud.pc.parallel;
 
 import com.cloud.pc.entity.Stats;
+import com.cloud.pc.model.PcPath;
 import com.cloud.pc.model.StsInfo;
+import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.JsonUtils;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 
 @Getter
@@ -42,37 +48,48 @@ public class PutTask implements Runnable {
 
     private final CountDownLatch latch;
     private S3Client s3Client;
-    private int partNumber;
-    private long  pos;
-    private long  size;
-    private String fileUrl;
-    private String localFile;
-    private String uploadId;
     private StsInfo stsInfo;
+    private String pcpUrl;
+    private PcPath pcPath;
+    private Map<String, String> userMetas;
+    private String localFile;
+    private long  size;
+    private long  blockSize;
+    private String uploadId;
+
     private String eTag;
     private Stats stats;
 
-    public PutTask(CountDownLatch latch, S3Client s3Client, int number, long pos, long size, StsInfo stsInfo) {
+    public PutTask(CountDownLatch latch, S3Client s3Client, StsInfo stsInfo, String pcpUrl, PcPath pcPath,
+                   Map<String, String> userMetas, String localFile, long size, long blockSize, String uploadId) {
         this.latch = latch;
         this.s3Client = s3Client;
-        this.partNumber = number;
-        this.pos = pos;
-        this.size = size;
         this.stsInfo = stsInfo;
+        this.pcpUrl = pcpUrl;
+        this.pcPath = pcPath;
+        this.userMetas = userMetas;
+        this.localFile = localFile;
+        this.size = size;
+        this.blockSize = blockSize;
+        this.uploadId = uploadId;
         this.stats = new Stats();
     }
 
-    private void putToPcp(byte[] buffer, long fileLength) throws Exception{
+    private void putToPcp(byte[] buffer) throws Exception{
         HttpURLConnection connection;
-        URL url = new URL(fileUrl);
+        URL url = new URL(FileUtils.mergePath(pcpUrl, pcPath.toString()));
         connection = (HttpURLConnection) url.openConnection();
         connection.setDoOutput(true);
         connection.setRequestMethod("POST");
-        connection.setRequestProperty("X-STS", JsonUtils.toJson(stsInfo));
-        connection.setRequestProperty("X-UPLOAD-ID", uploadId);
-        connection.setRequestProperty("X-UPLOAD-NUMBER", Long.toString(partNumber));
         connection.setRequestProperty("Content-Type", "application/octet-stream");
-        connection.setRequestProperty("Content-Length", String.valueOf(fileLength));
+        connection.setRequestProperty("Content-Length", String.valueOf(size));
+        connection.setRequestProperty("X-STS", JsonUtils.toJson(stsInfo));
+        if (userMetas != null && !userMetas.isEmpty()) {
+            connection.setRequestProperty("X-USER-META", JsonUtils.toJson(userMetas));
+        }
+        if (StringUtils.isNotBlank(uploadId)) {
+            connection.setRequestProperty("X-UPLOAD-ID", uploadId);
+        }
 
         connection.setConnectTimeout(30000);
         connection.setReadTimeout(60000);
@@ -99,18 +116,30 @@ public class PutTask implements Runnable {
     }
 
     private void putLocal(byte[] buffer) throws Exception{
-        UploadPartRequest uploadRequest = UploadPartRequest.builder()
-                .bucket(stsInfo.getName())
-                .key(stsInfo.getKey())
-                .uploadId(uploadId)
-                .partNumber(partNumber)
-                .build();
+        if (pcPath.isSingleFile()) {
+            PutObjectRequest.Builder builder = PutObjectRequest.builder();
+            PutObjectRequest putObjectRequest = builder.bucket(stsInfo.getBucketName())
+                    .contentLength(size)
+                    .metadata(userMetas)
+                    .key(pcPath.getKey()).build();
 
-        UploadPartResponse response = s3Client.uploadPart(
-                uploadRequest,
-                RequestBody.fromBytes(buffer)
-        );
-        eTag = response.eTag();
+            RequestBody requestBody = RequestBody.fromBytes(buffer);
+            PutObjectResponse response = s3Client.putObject(putObjectRequest, requestBody);
+            eTag = response.eTag();
+        } else {
+            UploadPartRequest uploadRequest = UploadPartRequest.builder()
+                    .bucket(stsInfo.getBucketName())
+                    .key(pcPath.getKey())
+                    .uploadId(uploadId)
+                    .partNumber((int)pcPath.getNumber()+1)
+                    .build();
+
+            UploadPartResponse response = s3Client.uploadPart(
+                    uploadRequest,
+                    RequestBody.fromBytes(buffer)
+            );
+            eTag = response.eTag();
+        }
     }
 
     @Override
@@ -121,29 +150,33 @@ public class PutTask implements Runnable {
             byte[] buffer;
             try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
                 buffer = new byte[(int) size];
-                raf.seek(pos);
+                raf.seek(pcPath.getNumber()*blockSize);
                 raf.read(buffer);
             }
 
-            if (fileUrl.startsWith("http")) {
+            if (StringUtils.isNotBlank(pcpUrl)) {
                 try {
-                    putToPcp(buffer, file.length());
+                    putToPcp(buffer);
                     putLocal = false;
                     stats.addPcp();
                 } catch (Exception e) {
-                    LOG.error("exception to put {} to {} with PCP ", this.localFile, fileUrl, e);
+                    LOG.error("exception to put {} to {} from PCP {}", localFile, pcPath, pcpUrl, e);
                 }
+                LOG.info("finished put file {} to {} from PCP {}", localFile, pcPath, pcpUrl);
             }
             if (putLocal) {
                 putLocal(buffer);
                 stats.addLocal();
+                LOG.info("finished put file {} to {} from local", localFile, pcPath.toString());
             }
-            LOG.info("finished put file {} pos:{} size:{} to {}", localFile, pos, size, fileUrl);
+
         } catch (Exception e) {
-            LOG.error("exception to put {} to {} ", localFile, fileUrl, e);
+            LOG.error("exception to put {} to {} ", localFile, pcPath, e);
             stats.addFail();
         }finally {
-            latch.countDown();
+            if (latch != null) {
+                latch.countDown();
+            }
         }
     }
 }

@@ -83,7 +83,7 @@ public class S3ClientCache {
     private static S3Client newS3ClientInstance(StsInfo stsInfo) {
         return S3Client.builder()
                 .serviceConfiguration(buildS3Configuration(stsInfo.getStorageType()))
-                .endpointOverride(URI.create(stsInfo.getS3Endpoint()))
+                .endpointOverride(URI.create(stsInfo.getEndpoint()))
                 .region(Region.of(stsInfo.getRegion()))
                 .credentialsProvider(StaticCredentialsProvider.create(buildAwsCredentials(stsInfo)))
                 .build();

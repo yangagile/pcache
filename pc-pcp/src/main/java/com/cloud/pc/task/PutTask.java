@@ -16,6 +16,7 @@
 
 package com.cloud.pc.task;
 
+import com.cloud.pc.model.PcPath;
 import com.cloud.pc.model.StsInfo;
 import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.HttpHelper;
@@ -25,6 +26,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
@@ -32,28 +35,31 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Paths;
+import java.util.Map;
 
 import static com.cloud.pc.utils.HttpHelper.sendError;
 
 public class PutTask implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(PutTask.class);
-    ChannelHandlerContext ctx;
-    byte[] content;
-    S3Client s3Client;
-    StsInfo stsInfo;
-    String localFilePath;
-    String uploadId;
-    int partNumber;
+    private ChannelHandlerContext ctx;
+    private byte[] content;
+    private S3Client s3Client;
+    private StsInfo stsInfo;
+    private PcPath pcPath;
+    private String localFile;
+    private String uploadId;
+    private Map<String, String> userMetas;
 
-    public PutTask(ChannelHandlerContext ctx, byte[] content, S3Client s3Client,
-                   StsInfo stsInfo, String localFilePath, String uploadId, int partNumber) {
+    public PutTask(ChannelHandlerContext ctx, byte[] content, S3Client s3Client, StsInfo stsInfo,
+                   String localFile, PcPath pcPath, String uploadId, Map<String, String> userMetas) {
         this.ctx = ctx;
         this.content = content;
         this.s3Client = s3Client;
         this.stsInfo = stsInfo;
-        this.localFilePath = localFilePath;
+        this.localFile = localFile;
+        this.pcPath = pcPath;
         this.uploadId = uploadId;
-        this.partNumber = partNumber;
+        this.userMetas = userMetas;
     }
 
     @Override
@@ -61,20 +67,26 @@ public class PutTask implements Runnable {
         int retryCount = 3;
         while (retryCount > 0) {
             try {
-                final String eTag = uploadPart(s3Client, stsInfo.getName(), stsInfo.getKey(), uploadId,
-                        partNumber, content);
-                LOG.info("successfully to put uploadId:{} key:{} number:{} size{} retryCount:{} return etag:{}",
-                        uploadId, stsInfo.getKey(), partNumber, content.length, retryCount, eTag);
+                String eTag;
+                if (pcPath.isSingleFile()) {
+                    eTag = uploadFullFile();
+                    LOG.info("successfully to put key:{} size{} retryCount:{} return etag:{}",
+                            pcPath.getKey(), content.length, retryCount, eTag);
+                } else {
+                    eTag = uploadPart();
+                    LOG.info("successfully to put key:{} number:{}/{} size{} uploadId:{} retryCount:{} return etag:{}",
+                            pcPath.getKey(), pcPath.getNumber(), pcPath.getTotalNumber(), content.length,
+                            uploadId, retryCount, eTag);
+                }
 
                 // 响应客户端 (切换回EventLoop线程)
                 ctx.executor().execute(() -> {
                     HttpHelper.sendResponse(ctx, HttpResponseStatus.OK, eTag);
                 });
-                saveToDisk(content, localFilePath); // 实际存储
+                saveToDisk();
                 return;
             } catch (Exception e) {
-                LOG.error("exception to put uploadId:{} key:{} number:{} size{} retryCount:{}",
-                        uploadId, stsInfo.getKey(), partNumber, content.length, retryCount, e);
+                LOG.error("exception to put {} size{} retryCount:{}", pcPath, content.length, retryCount, e);
                 retryCount--;
             }
         }
@@ -83,36 +95,46 @@ public class PutTask implements Runnable {
         });
     }
 
-    private static String uploadPart(S3Client s3Client,
-                                     String bucketName,
-                                     String objectKey,
-                                     String uploadId,
-                                     int partNumber,
-                                     byte[] partData) {
+    private String uploadPart() {
         UploadPartRequest uploadRequest = UploadPartRequest.builder()
-                .bucket(bucketName)
-                .key(objectKey)
+                .bucket(stsInfo.getBucketName())
+                .key(pcPath.getKey())
                 .uploadId(uploadId)
-                .partNumber(partNumber)
+                .partNumber((int)pcPath.getNumber()+1)
                 .build();
 
         UploadPartResponse response = s3Client.uploadPart(
                 uploadRequest,
-                RequestBody.fromBytes(partData)
+                RequestBody.fromBytes(content)
         );
         return response.eTag();
     }
 
-    private void saveToDisk(byte[] buffer, String localFilePath) {
+    private String uploadFullFile() {
+        PutObjectRequest.Builder builder = PutObjectRequest.builder();
+        PutObjectRequest putObjectRequest = builder.bucket(stsInfo.getBucketName())
+                .contentLength((long)(content.length))
+                .metadata(userMetas)
+                .key(pcPath.getKey()).build();
+
+        RequestBody requestBody = RequestBody.fromBytes(content);
+        PutObjectResponse response = s3Client.putObject(putObjectRequest, requestBody);
+        return response.eTag();
+    }
+
+    private void saveToDisk() {
         try {
-            FileUtils.mkParentDir(Paths.get(localFilePath));
-            File outputFile = new File(localFilePath);
+            if (!FileUtils.mkParentDir(Paths.get(localFile))) {
+                LOG.error("failed to create parent dir of {}", localFile);
+                throw new RuntimeException("failed to create parent dir");
+            }
+            File outputFile = new File(localFile);
             try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-                fos.write(buffer);
+                fos.write(content);
             }
         } catch (IOException e ) {
             LOG.error("exception to save to local! localFilePath:{} size:{}",
-                    localFilePath, buffer.length, e);
+                    localFile, content.length, e);
         }
     }
 }

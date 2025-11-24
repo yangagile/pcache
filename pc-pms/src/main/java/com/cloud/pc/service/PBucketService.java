@@ -130,18 +130,15 @@ public class PBucketService {
             throw new RuntimeException("vendor do not exists vendorBucketId=" + vb.getId());
         }
         StsInfo stsResult = new StsInfo();
-        stsResult.setId(vb.getId());
-        stsResult.setName(vb.getName());
+        stsResult.setBucketName(vb.getName());
         stsResult.setRegion(vb.getRegion());
         stsResult.setPath(applyStsToken.getPath());
         stsResult.setStorageType(vb.getVendor());
-        stsResult.setBucketType(vb.getPermission());
         if(StringUtils.isNullOrEmpty(vb.getEndpoint())) {
             stsResult.setEndpoint(vendor.getEndpoint());
         } else {
             stsResult.setEndpoint(vb.getEndpoint());
         }
-        stsResult.setS3Endpoint(vendor.getS3Endpoint());
         stsResult.setCdnEndpoint(vb.getCdnEndpoint());
 
         ClientCreationInfo clientCreationInfo = new ClientCreationInfo(

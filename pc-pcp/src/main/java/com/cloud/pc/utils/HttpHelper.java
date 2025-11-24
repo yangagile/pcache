@@ -102,7 +102,7 @@ public class HttpHelper {
         }
         uri = uri.replace('/', File.separatorChar);
         // Convert to absolute path.
-        return Envs.dataDir + uri;
+        return FileUtils.mergePath(Envs.dataDir, uri);
     }
     public static void sendResponse(ChannelHandlerContext ctx, HttpResponseStatus status, String message) {
         FullHttpResponse response = new DefaultFullHttpResponse(

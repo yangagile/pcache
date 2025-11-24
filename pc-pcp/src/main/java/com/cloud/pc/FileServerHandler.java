@@ -17,6 +17,7 @@
 package com.cloud.pc;
 
 import com.cloud.pc.config.Envs;
+import com.cloud.pc.model.PcPath;
 import com.cloud.pc.model.StsInfo;
 import com.cloud.pc.task.GetTask;
 import com.cloud.pc.task.PutTask;
@@ -30,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3.S3Client;
 
+import java.util.Map;
 import java.util.concurrent.*;
 
 import static com.cloud.pc.utils.HttpHelper.sendError;
@@ -44,27 +46,35 @@ public class FileServerHandler extends SimpleChannelInboundHandler<FullHttpReque
                     new LinkedBlockingQueue<>(Envs.linkedBlockingQueueSize),
                     new DefaultThreadFactory("File-Thread"));
 
-    private void getFile(ChannelHandlerContext ctx,  FullHttpRequest request, String path, String uri) {
-        GetTask getTask = new GetTask(ctx, request, path, uri);
+    private void getFile(ChannelHandlerContext ctx,  FullHttpRequest request, String localFile, PcPath pcPath) {
+        String sts = request.headers().get("X-STS");
+        StsInfo stsInfo = JsonUtils.fromJson(sts, StsInfo.class);
+        final S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
+        long size = Long.parseLong(request.headers().get("X-DATA-SIZE"));
+        long blockSize = Long.parseLong(request.headers().get("X-BLOCK-SIZE"));
+        GetTask getTask = new GetTask(ctx, request, s3Client, stsInfo, localFile, pcPath, size, blockSize);
         fileExecutor.submit(getTask);
     }
 
-    private void putFile(ChannelHandlerContext ctx, FullHttpRequest request, String localFilePath, String fileKey) {
+    private void putFile(ChannelHandlerContext ctx, FullHttpRequest request, String localFile, PcPath pcPath) {
         byte[] fileContent = new byte[request.content().readableBytes()];
         request.content().readBytes(fileContent);
         long expectedLength = Integer.parseInt(request.headers().get("Content-Length"));
         if (fileContent.length != expectedLength) {
             LOG.error("expected length:{}, received length: {} for file {}",
-                    expectedLength, fileContent.length, fileKey);
+                    expectedLength, fileContent.length, pcPath);
             throw new RuntimeException("invalid length");
         }
-
         String sts = request.headers().get("X-STS");
         StsInfo stsInfo = JsonUtils.fromJson(sts, StsInfo.class);
+        String strUserMeta = request.headers().get("X-USER-META");
+        Map<String, String> userMetas = null;
+        if (StringUtils.isNotBlank(strUserMeta)) {
+            userMetas = JsonUtils.fromJson(strUserMeta, Map.class);
+        }
         String uploadId = request.headers().get("X-UPLOAD-ID");
-        int partNumber = Integer.parseInt(request.headers().get("X-UPLOAD-NUMBER"));
         final S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
-        PutTask putTask = new PutTask(ctx, fileContent, s3Client, stsInfo, localFilePath, uploadId, partNumber);
+        PutTask putTask = new PutTask(ctx, fileContent, s3Client, stsInfo, localFile, pcPath, uploadId, userMetas);
         fileExecutor.submit(putTask);
     }
 
@@ -84,10 +94,11 @@ public class FileServerHandler extends SimpleChannelInboundHandler<FullHttpReque
                 return;
             }
             final String localFilePath = HttpHelper.sanitizeUri(fileKey);
+            PcPath pcPath = new PcPath(fileKey);
             if (request.method() == GET) {
-                getFile(ctx, request, localFilePath, fileKey);
+                getFile(ctx, request, localFilePath, pcPath);
             } else if (request.method() == POST) {
-                putFile(ctx, request, localFilePath, fileKey);
+                putFile(ctx, request, localFilePath, pcPath);
             } else {
                 LOG.error("[request]method{} is not allowed", request.method());
                 sendError(ctx, METHOD_NOT_ALLOWED);
