@@ -35,7 +35,7 @@ func NewS3ClientWithSTS(ctx context.Context, stsInfo *model.StsInfo) (*s3.Client
 	if err != nil {
 		return nil, err
 	}
-	cfg.BaseEndpoint = aws.String(stsInfo.S3Endpoint)
+	cfg.BaseEndpoint = aws.String(stsInfo.Endpoint)
 	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.UsePathStyle = true
 	})

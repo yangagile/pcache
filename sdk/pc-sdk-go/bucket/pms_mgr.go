@@ -46,7 +46,7 @@ type PmsManager struct {
 	retryTimes int
 }
 
-func NewPmsManager(ctx *context.Context, pmsUrl string, secretMgr *SecretManager) (*PmsManager, error) {
+func NewPmsManager(ctx context.Context, pmsUrl string, secretMgr *SecretManager) (*PmsManager, error) {
 	pm := &PmsManager{
 		secretMgr:  secretMgr,
 		retryTimes: 3,
@@ -59,8 +59,7 @@ func NewPmsManager(ctx *context.Context, pmsUrl string, secretMgr *SecretManager
 func (pm *PmsManager) ProbeFunction(url string) ([]string, error) {
 	pmsList, err := pm.GetPmsList(url)
 	if err != nil {
-		log.WithError(err).WithField("pmsUrl", pm.urlProve.GetUrl()).
-			Errorln("failed to get PMS list")
+		log.WithError(err).WithField("pmsUrl", url).Errorln("failed to get PMS list")
 		return nil, err
 	}
 	urls := make([]string, 0)

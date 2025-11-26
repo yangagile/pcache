@@ -49,24 +49,24 @@ func (w *PutWorker) putToPcp(blockInfo *model.PutBlock, stsInfo *model.StsInfo, 
 	req, err := http.NewRequestWithContext(
 		context.Background(),
 		"POST",
-		blockInfo.PcpHost+blockInfo.Key,
+		blockInfo.Block.GetPcPath(),
 		bytes.NewReader(buffer),
 	)
 	if err != nil {
 		return "", err
 	}
 
-	stsInfo.FileKey = blockInfo.Key
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Content-Length", strconv.Itoa(len(buffer)))
+
 	stsJson, err := json.Marshal(stsInfo)
 	if err != nil {
 		return "", err
 	}
-
 	req.Header.Set("X-STS", string(stsJson))
-	req.Header.Set("X-UPLOAD-ID", *blockInfo.UploadId)
-	req.Header.Set("X-UPLOAD-NUMBER", strconv.FormatInt(int64(blockInfo.PartNumber), 10))
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("Content-Length", strconv.Itoa(len(buffer)))
+	if blockInfo.UploadId != nil {
+		req.Header.Set("X-UPLOAD-ID", *blockInfo.UploadId)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -86,54 +86,79 @@ func (w *PutWorker) putToPcp(blockInfo *model.PutBlock, stsInfo *model.StsInfo, 
 	return string(bytes.TrimSpace(etagBytes)), nil
 }
 
-func (w *PutWorker) uploadWorker() {
-	defer w.wg.Done()
+func (w *PutWorker) PutBlock(c *model.PutBlock) error {
+	startTime := time.Now().UnixMilli()
+	buf := make([]byte, c.Size)
+	file, err := os.Open(c.PartFile)
+	if err != nil {
+		c.Block.State = model.STATE_FAIL
+		return fmt.Errorf("failed to open file %v with error: %w", c.PartFile, err)
+	}
+	_, err = file.ReadAt(buf, c.BlockNumber*c.BlockSize)
+	file.Close()
+	if err != nil {
+		c.Block.State = model.STATE_FAIL
+		return fmt.Errorf("failed to read file %v block with error: %w", c.PartFile, err)
+	}
 
-	for c := range w.ch {
-		startTime := time.Now().UnixMilli()
-		buf := make([]byte, c.Size)
-		file, err := os.Open(c.File)
+	eTag := ""
+	if c.PcpHost != "" {
+		eTag, err = w.putToPcp(c, w.client.router.GetStsInfo(), buf)
 		if err != nil {
-			w.chErr <- fmt.Errorf("failed to open file: %w", err)
-			return
+			log.WithError(err).WithField("PcpHost", c.PcpHost).Errorln("upload by PCP error")
+			c.Block.State = model.STATE_OK_LOCAL_PCP_FAIL
+		} else {
+			c.Block.State = model.STATE_OK_PCP_LOCAL
 		}
-		_, err = file.ReadAt(buf, c.Offset)
-		file.Close()
-		if err != nil {
-			w.chErr <- fmt.Errorf("failed to read block: %w", err)
-			return
-		}
+	}
 
-		eTag := ""
-		if c.PcpHost != "" {
-			eTag, err = w.putToPcp(c, w.client.router.GetStsInfo(), buf)
-			if err != nil {
-				log.WithError(err).WithField("bock info: ", c).
-					Errorln("upload part by PCP error")
-				c.Block.State = model.STATE_OK_LOCAL_PCP_FAIL
-			} else {
-				c.Block.State = model.STATE_OK_PCP_LOCAL
-			}
-		}
-		if eTag == "" {
+	if eTag == "" {
+		if c.TotalNumber > 1 {
+			PartNumber := int32(c.BlockNumber + 1)
 			uploadResp, err := w.client.s3ClientCache.Get().UploadPart(context.TODO(), &s3.UploadPartInput{
 				Bucket:     aws.String(w.client.router.GetStsInfo().BucketName),
 				Key:        aws.String(c.Key),
 				UploadId:   c.UploadId,
-				PartNumber: &c.PartNumber,
+				PartNumber: &PartNumber,
 				Body:       bytes.NewReader(buf),
 			})
 			if err != nil {
-				w.chErr <- fmt.Errorf("upload part %d failed: %w", c.PartNumber, err)
 				c.Block.State = model.STATE_FAIL
-				return
+				return fmt.Errorf("upload part %d failed: %w", c.BlockNumber, err)
 			}
-			if c.Block.State != model.STATE_OK_LOCAL_PCP_FAIL {
-				c.Block.State = model.STATE_OK_LOCAL
+
+			eTag = *uploadResp.ETag
+		} else {
+			input := &s3.PutObjectInput{
+				Bucket: aws.String(w.client.router.GetStsInfo().BucketName),
+				Key:    aws.String(c.Key),
+				Body:   bytes.NewReader(buf),
 			}
+
+			uploadResp, err := w.client.s3ClientCache.Get().PutObject(context.TODO(), input)
+			if err != nil {
+				c.Block.State = model.STATE_FAIL
+				return fmt.Errorf("failed to put:%v with err:%v", input, err)
+			}
+			c.Block.State = model.STATE_OK_LOCAL
 			eTag = *uploadResp.ETag
 		}
-		c.Etag = &eTag
-		c.Block.TimeDuration = time.Now().UnixMilli() - startTime
+	}
+	c.Etag = &eTag
+	if c.Block.State == model.STATE_OK_LOCAL_PCP_FAIL {
+		c.Block.State = model.STATE_OK_LOCAL
+	}
+	c.Block.TimeDuration = time.Now().UnixMilli() - startTime
+	return nil
+}
+
+func (w *PutWorker) putWorker() {
+	defer w.wg.Done()
+	for c := range w.ch {
+		err := w.PutBlock(c)
+		if err != nil {
+			w.chErr <- err
+			return
+		}
 	}
 }

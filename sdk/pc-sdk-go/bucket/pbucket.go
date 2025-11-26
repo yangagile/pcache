@@ -25,10 +25,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/model"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
-	"io"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 )
 
@@ -46,14 +44,13 @@ type PBucket struct {
 	pcpCache             *PcpCache
 	pcpCacheTimeSec      int64
 	enablePCahche        bool
-	enableTracker        bool
 	pmsMgr               *PmsManager
 	secretMgr            *SecretManager
 }
 
 type Option func(*PBucket)
 
-func NewPBucket(ctx *context.Context, pmsUrl, bucket, ak, sk string, opts ...Option) (*PBucket, error) {
+func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions []string) (*PBucket, error) {
 	if pmsUrl == "" {
 		return nil, fmt.Errorf("pclient: missing pmsUrl")
 	}
@@ -73,12 +70,8 @@ func NewPBucket(ctx *context.Context, pmsUrl, bucket, ak, sk string, opts ...Opt
 		groupNumber:          6,
 		path:                 "",
 		enablePCahche:        true,
-		enableTracker:        true,
 		s3ClientCacheTimeSec: 300,
-	}
-
-	for _, opt := range opts {
-		opt(pb)
+		permissions:          permissions,
 	}
 
 	var err error
@@ -96,10 +89,6 @@ func NewPBucket(ctx *context.Context, pmsUrl, bucket, ak, sk string, opts ...Opt
 
 	if pb.enablePCahche {
 		pb.pcpCache = NewPcpCache(pb.pcpCacheTimeSec, pb.getPcpTable)
-	}
-
-	if utils.GetTracker(ctx) == nil && pb.enableTracker {
-		*ctx = utils.WithTracker(ctx)
 	}
 
 	pb.s3ClientCache, err = NewS3ClientCache(pb.s3ClientCacheTimeSec*1000, pb.getS3Client)
@@ -142,143 +131,94 @@ func (pb *PBucket) getPcpTable(checksum string) *utils.PcpTable {
 	return pcpTable
 }
 
-// 自定义超时时间
-func WithPermissions(permission string) Option {
-	return func(c *PBucket) {
-		c.permissions = strings.Split(permission, ",")
-	}
+func (pb *PBucket) EnablePCache(enablePCache bool) {
+	pb.enablePCahche = enablePCache
 }
 
-func WithGroupNumber(groupNumber int) Option {
-	return func(c *PBucket) {
-		c.groupNumber = groupNumber
-	}
-}
-
-func WithBlockSize(blockSize int64) Option {
-	return func(c *PBucket) {
-		c.bolckSize = blockSize
-	}
-}
-
-func WithPcpCacheTimeout(pcpCacheTimeSec int64) Option {
-	return func(c *PBucket) {
-		c.pcpCacheTimeSec = pcpCacheTimeSec
-	}
-}
-
-func WithPCacheEnable(enablePCache bool) Option {
-	return func(c *PBucket) {
-		c.enablePCahche = enablePCache
-	}
-}
-
-func (pb *PBucket) Put(ctx *context.Context, localFilePath, objectKey string) error {
-	if utils.GetTracker(ctx) == nil && pb.enableTracker {
-		*ctx = utils.WithTracker(ctx)
-	}
+func (pb *PBucket) Put(ctx context.Context, localFilePath, objectKey string) error {
 	fileInfo, err := os.Stat(localFilePath)
 	if err != nil {
 		log.WithError(err).WithField("localFilePath", localFilePath).
 			Errorln("failed to open file")
 		return err
 	}
-	if pb.enablePCahche && fileInfo.Size() > pb.bolckSize {
-		return pb.putWithPCache(ctx, localFilePath, objectKey, fileInfo.Size())
+	if fileInfo.Size() > pb.bolckSize {
+		return pb.putMultiPart(ctx, localFilePath, objectKey, fileInfo.Size())
 	} else {
-		return pb.putFromLocal(ctx, localFilePath, objectKey)
+		return pb.putSingleFile(ctx, localFilePath, objectKey, fileInfo.Size())
 	}
 }
 
-// 上传文件到 S3
-func (pb *PBucket) putFromLocal(ctx *context.Context, filePath, objectKey string) error {
-	// 打开本地文件
-	file, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to open:%v with err:%v", filePath, err)
-	}
-	defer file.Close()
+func (pb *PBucket) Get(ctx context.Context, objectKey, localFilePath string) error {
 
-	stsInfo := pb.router.GetStsInfo()
-	input := &s3.PutObjectInput{
-		Bucket: aws.String(stsInfo.BucketName),
-		Key:    aws.String(objectKey),
-		Body:   file,
-	}
-
-	_, err = pb.s3ClientCache.Get().PutObject(context.TODO(), input)
-	if err != nil {
-		return fmt.Errorf("failed to put:%v with err:%v", input, err)
-	}
-
-	return nil
-}
-
-func (pb *PBucket) Get(ctx *context.Context, objectKey, localFilePath string) error {
-	if utils.GetTracker(ctx) == nil && pb.enableTracker {
-		*ctx = utils.WithTracker(ctx)
-	}
 	if pb.enablePCahche {
 		return pb.getWithPCache(ctx, objectKey, localFilePath)
 	} else {
-		return pb.getFromLocal(ctx, objectKey, localFilePath)
+		return pb.getSingleFile(ctx, objectKey, localFilePath)
 	}
 }
 
 // 从 S3 下载文件
-func (pb *PBucket) getFromLocal(ctx *context.Context, objectKey, filePath string) error {
-	input := &s3.GetObjectInput{
-		Bucket: aws.String(pb.router.GetStsInfo().BucketName),
-		Key:    aws.String(objectKey),
+func (pb *PBucket) getSingleFile(ctx context.Context, key, localFile string) error {
+	pcpHost := ""
+	if pb.enablePCahche && pb.pcpCache != nil {
+		pcpHost = pb.pcpCache.Get(key)
 	}
-
-	result, err := pb.s3ClientCache.Get().GetObject(context.TODO(), input)
-	if err != nil {
-		return fmt.Errorf("failed to get:%v with err:%v", input, err)
+	blockInfo := &model.GetBlock{
+		Block: model.Block{
+			PcpHost:      pcpHost,
+			Bucket:       pb.bucket,
+			PartFile:     localFile,
+			Key:          key,
+			BlockNumber:  0,
+			TotalNumber:  1,
+			Size:         pb.bolckSize,
+			BlockSize:    pb.bolckSize,
+			TimeDuration: 0,
+			State:        model.STATE_FAIL,
+		},
 	}
-	defer result.Body.Close()
-
-	file, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to create local file:%v with err:%v", filePath, err)
+	worker := GetWorker{
+		wg:     nil,
+		client: pb,
+		ch:     nil,
+		chErr:  nil,
 	}
-	defer file.Close()
+	worker.GetBlock(blockInfo)
 
-	_, err = io.Copy(file, result.Body)
-	if err != nil {
-		return fmt.Errorf("failed to write file:%v with err:%v", file, err)
+	stats := utils.GetStatCounter(ctx)
+	if stats == nil {
+		stats = utils.NewStats()
 	}
+	stats.Update(&blockInfo.Block)
+	stats.End(ctx)
 
+	log.WithField("local file", localFile).WithField("bucket", pb.bucket).WithField("key", key).
+		WithField("stats", stats).Infoln("successfully get single file")
 	return nil
 }
 
-func (pb *PBucket) getWithPCache(ctx *context.Context, objectKey, filePath string) error {
-	t := utils.GetTracker(ctx)
-	if t != nil {
-		t.StartPhase("head object")
-	}
-
-	resp, err := utils.HeadObject(pb.s3ClientCache.Get(), pb.router.GetStsInfo().BucketName, objectKey)
+func (pb *PBucket) getWithPCache(ctx context.Context, key, localFile string) error {
+	resp, err := utils.HeadObject(pb.s3ClientCache.Get(), pb.router.GetStsInfo().BucketName, key)
 	if err != nil {
-		log.WithError(err).WithField("objectKey", objectKey).Errorln("failed to head object")
+		log.WithError(err).WithField("key", key).Errorln("failed to head object")
 		return err
 	}
-	if t != nil {
-		t.EndPhase("head objectdone")
-		t.StartPhase("get multipart")
-	}
-
 	if *resp.ContentLength == 0 {
 		return fmt.Errorf("object size is 0")
 	}
-
 	fileSize := *resp.ContentLength
-	chunkCount := (fileSize + pb.bolckSize - 1) / pb.bolckSize
 
+	// use getSingleFile for small file
+	if fileSize < pb.bolckSize {
+		return pb.getSingleFile(ctx, key, localFile)
+	}
+
+	blockCount := (fileSize + pb.bolckSize - 1) / pb.bolckSize
 	var wg sync.WaitGroup
-	chBlock := make(chan *model.GetBlock, chunkCount)
+	chBlock := make(chan *model.GetBlock, blockCount)
 	chErrors := make(chan error, 1)
-	threadNumber := min(pb.groupNumber, int(chunkCount))
+	threadNumber := min(pb.groupNumber, int(blockCount))
 
 	for i := 0; i < threadNumber; i++ {
 		wg.Add(1)
@@ -291,41 +231,35 @@ func (pb *PBucket) getWithPCache(ctx *context.Context, objectKey, filePath strin
 		go worker.getWorker()
 	}
 
-	blockList := make([]*model.GetBlock, chunkCount)
+	blockList := make([]*model.GetBlock, blockCount)
 	go func() {
 		defer close(chBlock)
-		for part := int32(1); part <= int32(chunkCount); part++ {
-			offset := int64(part-1) * pb.bolckSize
+		for i := int64(0); i < blockCount; i++ {
+			offset := i * pb.bolckSize
 			remaining := fileSize - offset
 			size := pb.bolckSize
 			if remaining < pb.bolckSize {
 				size = remaining
 			}
-
-			pcpUrl := pb.pcpCache.Get(objectKey + strconv.Itoa(int(part)))
-			if len(pcpUrl) > 0 {
-				pcpUrl = fmt.Sprintf("%s%s/%s.%08d_%d",
-					pcpUrl,
-					pb.bucket,
-					objectKey,
-					part,
-					size)
+			pcpHost := ""
+			if pb.enablePCahche && pb.pcpCache != nil {
+				pcpHost = pb.pcpCache.Get(key + strconv.FormatInt(i, 10))
 			}
-
-			partFile := fmt.Sprintf("%s.%08d_%d", filePath, part, size)
-			blockList[part-1] = &model.GetBlock{
+			blockList[i] = &model.GetBlock{
 				Block: model.Block{
-					File:         partFile,
-					Key:          objectKey,
-					PartNumber:   part,
-					Offset:       offset,
+					PcpHost:      pcpHost,
+					Bucket:       pb.bucket,
+					PartFile:     fmt.Sprintf("%s.%d_%d", localFile, i, blockCount),
+					Key:          key,
+					BlockNumber:  i,
+					TotalNumber:  blockCount,
 					Size:         size,
-					PcpHost:      pcpUrl,
+					BlockSize:    pb.bolckSize,
 					TimeDuration: 0,
 					State:        model.STATE_FAIL,
 				},
 			}
-			chBlock <- blockList[part-1]
+			chBlock <- blockList[i]
 		}
 	}()
 
@@ -339,30 +273,23 @@ func (pb *PBucket) getWithPCache(ctx *context.Context, objectKey, filePath strin
 	}
 	close(chErrors)
 
-	if t != nil {
-		t.EndPhase("get multipart done")
-		t.StartPhase("merge file")
+	stats := utils.GetStatCounter(ctx)
+	if stats == nil {
+		stats = utils.NewStats()
 	}
-
-	stats := utils.NewStats()
-	localPartFiles := make([]string, chunkCount)
-	for i := 0; i < int(chunkCount); i++ {
-		localPartFiles[i] = blockList[i].File
+	localPartFiles := make([]string, blockCount)
+	for i := 0; i < int(blockCount); i++ {
+		localPartFiles[i] = blockList[i].PartFile
 		stats.Update(&blockList[i].Block)
 	}
-	err = utils.MergeFiles(localPartFiles, filePath)
+	err = utils.MergeFiles(localPartFiles, localFile)
 	if err != nil {
-		log.WithError(err).WithField("objectKey", objectKey).Errorln("failed to head object")
+		log.WithError(err).WithField("key", key).Errorln("failed to head object")
 		return err
 	}
-	if t != nil {
-		t.EndPhase("merge file done")
-	}
-
 	stats.End(ctx)
-	log.WithField("file", filePath).WithField("bucket", pb.bucket).WithField("key", objectKey).
+	log.WithField("file", localFile).WithField("bucket", pb.bucket).WithField("key", key).
 		WithField("stats", stats).Infoln("successfully get file")
-
 	return nil
 }
 
@@ -375,12 +302,47 @@ func (pb *PBucket) abortMultipartPut(key string, uploadID *string) error {
 	return err
 }
 
-func (pb *PBucket) putWithPCache(ctx *context.Context, filename, key string, fileSize int64) error {
-	t := utils.GetTracker(ctx)
-	if t != nil {
-		t.StartPhase("create upload ID")
+func (pb *PBucket) putSingleFile(ctx context.Context, localFile, key string, fileSize int64) error {
+	pcpHost := ""
+	if pb.enablePCahche && pb.pcpCache != nil {
+		pcpHost = pb.pcpCache.Get(key)
 	}
+	blockInfo := &model.PutBlock{
+		Block: model.Block{
+			PcpHost:      pcpHost,
+			Bucket:       pb.bucket,
+			PartFile:     localFile,
+			Key:          key,
+			BlockNumber:  0,
+			TotalNumber:  1,
+			Size:         fileSize,
+			BlockSize:    pb.bolckSize,
+			TimeDuration: 0,
+			State:        model.STATE_FAIL,
+		},
+		UploadId: nil,
+	}
+	worker := PutWorker{
+		wg:     nil,
+		client: pb,
+		ch:     nil,
+		chErr:  nil,
+	}
+	worker.PutBlock(blockInfo)
 
+	stats := utils.GetStatCounter(ctx)
+	if stats == nil {
+		stats = utils.NewStats()
+	}
+	stats.Update(&blockInfo.Block)
+	stats.End(ctx)
+
+	log.WithField("local file", localFile).WithField("bucket", pb.bucket).WithField("key", key).
+		WithField("stats", stats).Infoln("successfully put single file")
+	return nil
+}
+
+func (pb *PBucket) putMultiPart(ctx context.Context, filename, key string, fileSize int64) error {
 	createResp, err := pb.s3ClientCache.Get().CreateMultipartUpload(context.TODO(), &s3.CreateMultipartUploadInput{
 		Bucket: aws.String(pb.router.GetStsInfo().BucketName),
 		Key:    aws.String(key),
@@ -390,67 +352,58 @@ func (pb *PBucket) putWithPCache(ctx *context.Context, filename, key string, fil
 			Errorln("failed to CreateMultipartUpload")
 		return err
 	}
-	if t != nil {
-		t.EndPhase("create upload ID done")
-		t.StartPhase("multipart put object")
-	}
 	uploadID := createResp.UploadId
 
-	chunkCount := (fileSize + pb.bolckSize - 1) / pb.bolckSize
+	blockCount := (fileSize + pb.bolckSize - 1) / pb.bolckSize
 	var wg sync.WaitGroup
-	ch := make(chan *model.PutBlock, chunkCount)
+	chBlock := make(chan *model.PutBlock, blockCount)
+
 	chErrors := make(chan error, 1)
-	blockList := make([]*model.PutBlock, chunkCount)
-
-	go func() {
-		defer close(ch)
-		for part := int32(1); part <= int32(chunkCount); part++ {
-			offset := int64(part-1) * pb.bolckSize
-			remaining := fileSize - offset
-			size := pb.bolckSize
-			if remaining < pb.bolckSize {
-				size = remaining
-			}
-
-			pcpUrl := pb.pcpCache.Get(key + strconv.Itoa(int(part)))
-			if len(pcpUrl) > 0 {
-				pcpUrl = fmt.Sprintf("%s%s/%s.%08d_%d",
-					pcpUrl,
-					pb.bucket,
-					key,
-					part,
-					size)
-			}
-
-			blockList[part-1] = &model.PutBlock{
-				Block: model.Block{
-					File:         filename,
-					Key:          key,
-					PartNumber:   part,
-					Offset:       offset,
-					Size:         size,
-					PcpHost:      pcpUrl,
-					TimeDuration: 0,
-					State:        model.STATE_FAIL,
-				},
-				UploadId: uploadID,
-			}
-
-			ch <- blockList[part-1]
-		}
-	}()
-
-	threadNumber := min(pb.groupNumber, int(chunkCount))
+	threadNumber := min(pb.groupNumber, int(blockCount))
 	for i := 0; i < threadNumber; i++ {
 		wg.Add(1)
 		worker := PutWorker{
 			wg:     &wg,
 			client: pb,
-			ch:     ch,
+			ch:     chBlock,
 			chErr:  chErrors,
 		}
-		go worker.uploadWorker()
+		go worker.putWorker()
 	}
+
+	blockList := make([]*model.PutBlock, blockCount)
+
+	go func() {
+		defer close(chBlock)
+		for i := int64(0); i < blockCount; i++ {
+			offset := i * pb.bolckSize
+			remaining := fileSize - offset
+			size := pb.bolckSize
+			if remaining < pb.bolckSize {
+				size = remaining
+			}
+			pcpHost := ""
+			if pb.enablePCahche && pb.pcpCache != nil {
+				pcpHost = pb.pcpCache.Get(key + strconv.FormatInt(i, 10))
+			}
+			blockList[i] = &model.PutBlock{
+				Block: model.Block{
+					PcpHost:      pcpHost,
+					Bucket:       pb.bucket,
+					PartFile:     filename,
+					Key:          key,
+					BlockNumber:  i,
+					TotalNumber:  blockCount,
+					Size:         size,
+					BlockSize:    pb.bolckSize,
+					TimeDuration: 0,
+					State:        model.STATE_FAIL,
+				},
+				UploadId: uploadID,
+			}
+			chBlock <- blockList[i]
+		}
+	}()
 
 	wg.Wait()
 	select {
@@ -463,16 +416,15 @@ func (pb *PBucket) putWithPCache(ctx *context.Context, filename, key string, fil
 	}
 	close(chErrors)
 
-	if t != nil {
-		t.EndPhase("multipart put object done")
-		t.StartPhase("complete multipart")
+	stats := utils.GetStatCounter(ctx)
+	if stats == nil {
+		stats = utils.NewStats()
 	}
-
-	stats := utils.NewStats()
-	completedParts := make([]types.CompletedPart, chunkCount)
-	for i := range int(chunkCount) {
+	completedParts := make([]types.CompletedPart, blockCount)
+	for i := range int(blockCount) {
+		PartNumber := int32(blockList[i].BlockNumber + 1)
 		completedParts[i] = types.CompletedPart{
-			PartNumber: &blockList[i].PartNumber,
+			PartNumber: &PartNumber,
 			ETag:       blockList[i].Etag,
 		}
 		stats.Update(&blockList[i].Block)
@@ -490,9 +442,6 @@ func (pb *PBucket) putWithPCache(ctx *context.Context, filename, key string, fil
 		log.WithError(err).WithField("BucketName", pb.router.GetStsInfo().BucketName).
 			WithField("key", key).Errorln("failed to CompleteMultipartUpload")
 		return err
-	}
-	if t != nil {
-		t.StartPhase("complete multipart done")
 	}
 
 	stats.End(ctx)

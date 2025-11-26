@@ -18,30 +18,72 @@ package bucket
 
 import (
 	"context"
+	"fmt"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
-	"log"
 	"os"
 	"testing"
+	"time"
 )
 
-var testRootPrefix = "test/pclient/go/"
-var testRootLocal = "~/tmp/test/pclient/go/"
+var testRootPrefix = "test/pcache/go/sdk/"
+var testRootLocal = "~/tmp/pbucket_test/" // will use os.TempDir()
 
 var pmsUrl = "http://127.0.0.1:8080"
 var ak = "unittest"
 var sk = "3ewGHUIayI8cZ8qgAkoJ31gXvGqAzKmmsTLqMhTrhyM="
 var bucket = "test-minio"
 
-func Test_PutGet(t *testing.T) {
-	ctx := context.Background()
-	client, err := NewPBucket(&ctx, pmsUrl, bucket, ak, sk,
-		WithPermissions("PutObject,GetObject"),
-		WithPCacheEnable(false))
-	if err != nil {
-		log.Fatalf("failed to create bucket: %v", err)
+func TestMain(m *testing.M) {
+	setup()
+
+	code := m.Run()
+
+	teardown()
+
+	os.Exit(code)
+}
+
+func setup() {
+	testRootLocal = utils.MergePath(os.TempDir(), "pbucket_test")
+	info, err := os.Stat(testRootLocal)
+	if err == nil {
+		if info.IsDir() {
+			os.Remove(testRootLocal)
+		} else {
+			panic(fmt.Errorf("root %v is not valid dir", testRootLocal))
+		}
 	}
-	fileName := "Test_PutGet.dat"
-	fileSize := int64(1 * 10244)
+	err = os.MkdirAll(testRootLocal, 0755)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func teardown() {
+	// clean temp files
+	os.Remove(testRootLocal)
+}
+
+type PhaseRecord struct {
+	Name      string
+	StartTime time.Time
+	EndTime   time.Time
+	Duration  time.Duration
+}
+
+func Test_PutGet_SmallFileFromLocal(t *testing.T) {
+	ctx := utils.WithStatCounter(context.Background())
+
+	bucket, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
+	if err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+
+	// disable PCache
+	bucket.EnablePCache(false)
+
+	fileName := utils.GetCurrentFunctionName()
+	fileSize := int64(1024)
 	localFilePath, err := utils.CreateTestFile(testRootLocal, fileName, fileSize)
 	if err != nil {
 		t.Fatalf("failed to create local file:%v with err:%v", localFilePath, err)
@@ -49,56 +91,91 @@ func Test_PutGet(t *testing.T) {
 	fileKey := testRootPrefix + fileName
 	downloadPath := testRootLocal + fileName
 
-	err = client.Put(&ctx, localFilePath, fileKey)
+	err = bucket.Put(ctx, localFilePath, fileKey)
 	if err != nil {
 		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
 	}
-
-	err = client.Get(&ctx, fileKey, downloadPath)
+	stat := utils.GetStatCounter(ctx)
+	if stat.CountLocal <= 0 {
+		t.Fatalf("failed to put from local")
+	}
+	ctx = utils.WithStatCounter(context.Background())
+	err = bucket.Get(ctx, fileKey, downloadPath)
 	if err != nil {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
 	}
+	stat = utils.GetStatCounter(ctx)
+	if stat.CountLocal <= 0 {
+		t.Fatalf("failed to put from local")
+	}
 }
+
+func Test_PutGet_SmallFileFromPcp(t *testing.T) {
+	ctx := utils.WithStatCounter(context.Background())
+
+	bucket, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
+	if err != nil {
+		t.Fatalf("failed to create bucket: %v", err)
+	}
+
+	fileName := utils.GetCurrentFunctionName()
+	fileSize := int64(1024)
+	localFilePath, err := utils.CreateTestFile(testRootLocal, fileName, fileSize)
+	if err != nil {
+		t.Fatalf("failed to create local file:%v with err:%v", localFilePath, err)
+	}
+	fileKey := testRootPrefix + fileName
+	downloadPath := testRootLocal + fileName
+
+	err = bucket.Put(ctx, localFilePath, fileKey)
+	if err != nil {
+		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
+	}
+	stat := utils.GetStatCounter(ctx)
+	if stat.CountPcpLocal <= 0 {
+		t.Fatalf("failed to put from PCP")
+	}
+	ctx = utils.WithStatCounter(context.Background())
+	err = bucket.Get(ctx, fileKey, downloadPath)
+	if err != nil {
+		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
+	}
+	stat = utils.GetStatCounter(ctx)
+	if stat.CountPcpCache <= 0 {
+		t.Fatalf("failed to get from PCP")
+	}
+}
+
 func Test_PutWithPCache(t *testing.T) {
-	ctx := context.Background()
-	pb, err := NewPBucket(&ctx, pmsUrl, bucket, ak, sk, WithPermissions("PutObject,GetObject"))
+	ctx := utils.WithStatCounter(context.Background())
+	pb, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
 	if err != nil {
 		t.Fatalf("failed to new PBucket with err:%v", err)
 	}
 
-	fileName := "Test_PutWithPCache.dat"
+	fileName := utils.GetCurrentFunctionName()
 	fileSize := int64(10 * 1024 * 1024) // 10MB
 	uploadLocalPath, err := utils.CreateTestFile(testRootLocal, fileName, fileSize)
 	uploadKey := testRootPrefix + fileName
 
-	err = pb.Put(&ctx, uploadLocalPath, uploadKey)
+	err = pb.Put(ctx, uploadLocalPath, uploadKey)
 	if err != nil {
 		t.Fatalf("failed to file:%v with err:%v", fileName, err)
 	}
-	tr := utils.GetTracker(&ctx)
-	counterPcpLocal := tr.GetMetric(utils.StatsCounterPcpLocalKey).(int)
-	if counterPcpLocal <= 0 {
-		t.Fatalf("failed to use PCP to put")
+	stats := utils.GetStatCounter(ctx)
+	if stats.CountPcpLocal <= 0 {
+		t.Fatalf("failed to use PCP")
 	}
 
 	downloadPath := testRootLocal + fileName + ".download"
-	_, err = os.Stat(downloadPath)
-	if err == nil {
-		// 文件存在，删除它
-		err := os.Remove(downloadPath)
-		if err != nil {
-			t.Fatalf("failed to get old file:%v with err:%v", downloadPath, err)
-		}
-	}
 
-	ctx = context.Background()
-	err = pb.Get(&ctx, uploadKey, downloadPath)
+	ctx = utils.WithStatCounter(context.Background())
+	err = pb.Get(ctx, uploadKey, downloadPath)
 	if err != nil {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
 	}
-	tr = utils.GetTracker(&ctx)
-	counterPcpCache := tr.GetMetric(utils.StatsCounterPcpCacheKey).(int)
-	if counterPcpCache <= 0 {
-		t.Fatalf("failed to get PCP Cache")
+	stats = utils.GetStatCounter(ctx)
+	if stats.CountPcpCache <= 0 {
+		t.Fatalf("failed to use PCP")
 	}
 }

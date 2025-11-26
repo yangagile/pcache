@@ -21,11 +21,9 @@ type StsInfo struct {
 	AccessSecret  string `json:"accessSecret"`
 	SecurityToken string `json:"securityToken"`
 	Endpoint      string `json:"endpoint"`
-	S3Endpoint    string `json:"s3Endpoint"`
-	BucketName    string `json:"name"`
-	FileKey       string `json:"key"`
+	BucketName    string `json:"bucketName"`
+	Path          string `json:"path"`
 	StorageType   string `json:"storageType"`
-	BucketType    string `json:"bucketType"`
 	Region        string `json:"region"`
 	Expiration    int64  `json:"expiration"` // 使用 int64 存储时间戳
 }

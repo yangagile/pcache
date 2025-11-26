@@ -27,7 +27,7 @@ type SecretManager struct {
 	secretKey string
 }
 
-func NewSecretManager(ctx *context.Context, ak, sk string) (*SecretManager, error) {
+func NewSecretManager(ctx context.Context, ak, sk string) (*SecretManager, error) {
 	sm := &SecretManager{
 		accessKey: ak,
 		secretKey: sk,

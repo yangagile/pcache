@@ -16,6 +16,11 @@
 
 package model
 
+import (
+	"fmt"
+	"strings"
+)
+
 const (
 	STATE_FAIL         = iota // 0
 	STATE_OK_PCP_LOCAL        // 1
@@ -25,14 +30,23 @@ const (
 )
 
 type Block struct {
-	File         string
-	Key          string
-	PartNumber   int32
-	Offset       int64
-	Size         int64
 	PcpHost      string
+	Bucket       string
+	PartFile     string
+	Key          string
+	BlockNumber  int64
+	TotalNumber  int64
+	Size         int64
+	BlockSize    int64
 	TimeDuration int64
 	State        int
+}
+
+func (c *Block) GetPcPath() string {
+	if c.PcpHost != "" && !strings.HasSuffix(c.PcpHost, "/") {
+		c.PcpHost += "/"
+	}
+	return fmt.Sprintf("%s%s/%s.%d_%d", c.PcpHost, c.Bucket, c.Key, c.BlockNumber, c.TotalNumber)
 }
 
 type GetBlock struct {

@@ -22,6 +22,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -131,4 +132,23 @@ func MergePath(root, sub string) string {
 	}
 
 	return path
+}
+
+func GetCurrentFunctionName() string {
+	pc, _, _, ok := runtime.Caller(1)
+	if !ok {
+		return "Unknown"
+	}
+
+	fn := runtime.FuncForPC(pc)
+	if fn == nil {
+		return "Unknown"
+	}
+	pos := strings.LastIndex(fn.Name(), ".")
+	if pos < 0 {
+		pos = 0
+	} else {
+		pos = pos + 1
+	}
+	return fn.Name()[pos:]
 }

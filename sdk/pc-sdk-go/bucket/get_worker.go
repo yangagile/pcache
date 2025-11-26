@@ -41,17 +41,18 @@ type GetWorker struct {
 }
 
 func (w *GetWorker) getFromPcp(blockInfo *model.GetBlock, stsInfo *model.StsInfo) error {
-	req, err := http.NewRequestWithContext(context.Background(), "GET", blockInfo.PcpHost, nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", blockInfo.Block.GetPcPath(), nil)
 	if err != nil {
 		return err
 	}
-	stsInfo.FileKey = blockInfo.Key
 	stsJson, err := json.Marshal(stsInfo)
 	if err != nil {
 		return err
 	}
 
 	req.Header.Set("X-STS", string(stsJson))
+	req.Header.Set("X-DATA-SIZE", strconv.FormatInt(blockInfo.Size, 10))
+	req.Header.Set("X-BLOCK-SIZE", strconv.FormatInt(blockInfo.BlockSize, 10))
 
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -74,7 +75,7 @@ func (w *GetWorker) getFromPcp(blockInfo *model.GetBlock, stsInfo *model.StsInfo
 	}
 
 	// 创建本地文件
-	outFile, err := os.Create(blockInfo.File)
+	outFile, err := os.Create(blockInfo.PartFile)
 	if err != nil {
 		return err
 	}
@@ -106,7 +107,7 @@ func (w *GetWorker) getFromPcp(blockInfo *model.GetBlock, stsInfo *model.StsInfo
 				blockInfo.State = model.STATE_OK_PCP_LOCAL
 			}
 		} else {
-			log.WithError(err).WithField(" X-CACHE-HIT", blockInfo.File).
+			log.WithError(err).WithField(" X-CACHE-HIT", blockInfo.PartFile).
 				Errorln("failed to get local X-CACHE-HIT")
 			blockInfo.State = model.STATE_OK_PCP_LOCAL
 		}
@@ -116,61 +117,85 @@ func (w *GetWorker) getFromPcp(blockInfo *model.GetBlock, stsInfo *model.StsInfo
 
 func (w *GetWorker) getFromLocal(blockInfo *model.GetBlock, stsInfo *model.StsInfo) error {
 	// 创建文件
-	file, err := os.Create(blockInfo.File)
+	file, err := os.Create(blockInfo.PartFile)
 	if err != nil {
-		log.WithError(err).WithField("local file", blockInfo.File).
+		log.WithError(err).WithField("local file", blockInfo.PartFile).
 			Errorln("failed to create local file")
+		return err
 	}
 	defer file.Close()
+	var result *s3.GetObjectOutput
+	if blockInfo.TotalNumber > 1 {
+		offset := blockInfo.BlockNumber * blockInfo.BlockSize
+		rangeHeader := fmt.Sprintf("bytes=%d-%d", offset, offset+blockInfo.Size-1)
 
-	// 设置范围头
-	rangeHeader := fmt.Sprintf("bytes=%d-%d", blockInfo.Offset, blockInfo.Offset+blockInfo.Size-1)
+		// 执行范围下载
+		result, err = w.client.s3ClientCache.Get().GetObject(context.TODO(), &s3.GetObjectInput{
+			Bucket: aws.String(stsInfo.BucketName),
+			Key:    aws.String(blockInfo.Key),
+			Range:  aws.String(rangeHeader),
+		})
+		if err != nil {
+			log.WithError(err).WithField("bucket", stsInfo.BucketName).
+				WithField("key", blockInfo.Key).
+				WithField("rangeHeader", rangeHeader).
+				Errorln("failed to get part of object from s3")
+			return err
+		}
 
-	// 执行范围下载
-	result, err := w.client.s3ClientCache.Get().GetObject(context.TODO(), &s3.GetObjectInput{
-		Bucket: aws.String(stsInfo.BucketName),
-		Key:    aws.String(blockInfo.Key),
-		Range:  aws.String(rangeHeader),
-	})
-	if err != nil {
-		log.WithError(err).WithField("bucket", stsInfo.BucketName).
-			WithField("bucket", blockInfo.Key).
-			WithField("rangeHeader", rangeHeader).
-			Errorln("failed to get file from s3")
+	} else {
+		result, err = w.client.s3ClientCache.Get().GetObject(context.TODO(), &s3.GetObjectInput{
+			Bucket: aws.String(stsInfo.BucketName),
+			Key:    aws.String(blockInfo.Key),
+		})
+		if err != nil {
+			log.WithError(err).WithField("bucket", stsInfo.BucketName).
+				WithField("key", blockInfo.Key).
+				Errorln("failed to get file from s3")
+			return err
+		}
 	}
 	defer result.Body.Close()
-
 	if _, err := io.Copy(file, result.Body); err != nil {
-		log.WithError(err).WithField("local file", blockInfo.File).
+		log.WithError(err).WithField("local file", blockInfo.PartFile).
 			Errorln("failed to write local file")
+		return err
 	}
-
-	log.WithField("file", blockInfo.File).WithField("size", blockInfo.Offset+blockInfo.Size).
-		Infoln("successfully get file from s3")
+	log.WithField("key", blockInfo.Key).WithField("localFile", blockInfo.PartFile).
+		WithField("size", blockInfo.Size).Infoln("successfully get file from s3")
 	return nil
+}
+
+func (w *GetWorker) GetBlock(c *model.GetBlock) error {
+	startTime := time.Now().UnixMilli()
+	var err error
+	if c.PcpHost != "" {
+		err = w.getFromPcp(c, w.client.router.GetStsInfo())
+		if err != nil {
+			c.Block.State = model.STATE_OK_LOCAL_PCP_FAIL
+		}
+	}
+	if c.PcpHost == "" || err != nil {
+		err = w.getFromLocal(c, w.client.router.GetStsInfo())
+		if err == nil {
+			if c.Block.State != model.STATE_OK_LOCAL_PCP_FAIL {
+				c.Block.State = model.STATE_OK_LOCAL
+			}
+		} else {
+			c.Block.State = model.STATE_FAIL
+		}
+	}
+	c.Block.TimeDuration = time.Now().UnixMilli() - startTime
+	return err
 }
 
 func (w *GetWorker) getWorker() {
 	defer w.wg.Done()
 	for c := range w.ch {
-		startTime := time.Now().UnixMilli()
-		var err error
-		if c.PcpHost != "" {
-			err = w.getFromPcp(c, w.client.router.GetStsInfo())
-			if err != nil {
-				c.Block.State = model.STATE_OK_LOCAL_PCP_FAIL
-			}
+		err := w.GetBlock(c)
+		if err != nil {
+			w.chErr <- err
+			return
 		}
-		if c.PcpHost == "" || err != nil {
-			err = w.getFromLocal(c, w.client.router.GetStsInfo())
-			if err == nil {
-				if c.Block.State != model.STATE_OK_LOCAL_PCP_FAIL {
-					c.Block.State = model.STATE_OK_LOCAL
-				}
-			} else {
-				c.Block.State = model.STATE_FAIL
-			}
-		}
-		c.Block.TimeDuration = time.Now().UnixMilli() - startTime
 	}
 }

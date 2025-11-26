@@ -22,17 +22,6 @@ import (
 	"math"
 )
 
-const (
-	StatsCounterPcpCacheKey     string = "counter_pcp_cache"
-	StatsCounterPcpLocalKey     string = "counter_pcp_local"
-	StatsCounterLocalKey        string = "counter_local"
-	StatsCounterLocalPcpFailKey string = "counter_local_pcp_fail"
-	StatsCounterFailKey         string = "counter_fail"
-	StatsTimeAverageKey         string = "time_average"
-	StatsTimeMinKey             string = "time_min"
-	StatsTimeMaxKey             string = "time_max"
-)
-
 type Stats struct {
 	TimeAverage       int64
 	TimeMax           int64
@@ -44,8 +33,9 @@ type Stats struct {
 	CountLocalPcpFail int
 }
 
-func NewStats() Stats {
-	return Stats{0, 0, math.MaxInt, 0, 0, 0, 0, 0}
+func NewStats() *Stats {
+	return &Stats{0, 0, math.MaxInt,
+		0, 0, 0, 0, 0}
 }
 
 func (s *Stats) Update(b *model.Block) {
@@ -70,20 +60,21 @@ func (s *Stats) Update(b *model.Block) {
 	s.TimeAverage += b.TimeDuration
 }
 
-func (s *Stats) End(ctx *context.Context) {
+func (s *Stats) End(ctx context.Context) {
 	total := int64(s.CountFail + s.CountPcpLocal + s.CountPcpCache + s.CountLocal)
 	if total > 0 {
 		s.TimeAverage /= total
 	}
-	t := GetTracker(ctx)
-	if t != nil {
-		t.RecordMetric(StatsTimeAverageKey, s.TimeAverage)
-		t.RecordMetric(StatsTimeMaxKey, s.TimeMax)
-		t.RecordMetric(StatsTimeMinKey, s.TimeMin)
-		t.RecordMetric(StatsCounterFailKey, s.CountFail)
-		t.RecordMetric(StatsCounterPcpLocalKey, s.CountPcpLocal)
-		t.RecordMetric(StatsCounterPcpCacheKey, s.CountPcpCache)
-		t.RecordMetric(StatsCounterLocalKey, s.CountLocal)
-		t.RecordMetric(StatsCounterLocalPcpFailKey, s.CountLocalPcpFail)
+}
+
+func WithStatCounter(ctx context.Context) context.Context {
+	t := NewStats()
+	return context.WithValue(ctx, "stats", t)
+}
+
+func GetStatCounter(ctx context.Context) *Stats {
+	if t, ok := ctx.Value("stats").(*Stats); ok {
+		return t
 	}
+	return nil
 }
