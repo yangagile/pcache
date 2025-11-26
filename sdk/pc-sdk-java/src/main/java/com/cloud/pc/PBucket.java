@@ -154,21 +154,21 @@ public class PBucket {
             LOG.error("localFile:{} is not exists!", localFile);
             throw SdkClientException.create("invalid input file");
         }
-        BucketInfo vbInfo = getBucketInfo();
-        if (null == vbInfo) {
+        BucketInfo bucketInfo = getBucketInfo();
+        if (null == bucketInfo) {
             LOG.error("failed to get info! bucket:{}", name);
             throw SdkClientException.create("invalid bucket");
         }
-        Path fullKey = Paths.get(FileUtils.mergePath(vbInfo.getPrefix(), fileKey));
+        Path fullKey = Paths.get(FileUtils.mergePath(bucketInfo.getPrefix(), fileKey));
         if (fullKey.toString().length() > maxObjectKeyLength) {
             LOG.error("length of key:{} is more than {}", fullKey, maxObjectKeyLength);
             throw SdkClientException.create("key is too long");
         }
-        RoutingResult routingResult = pmsMgr.getVirtualBucketSTSApi(vbInfo.getName(),fullKey.getParent().toString(),
+        RoutingResult routingResult = pmsMgr.getVirtualBucketSTSApi(bucketInfo.getName(),bucketInfo.getPrefix(),
                 Collections.singletonList(PcPermission.PutObject), stsDurationSeconds);
         StsInfo stsInfo = routingResult.getSTS();
         if (null == stsInfo) {
-            LOG.error("failed to get STS for bucket:{}", vbInfo.getName());
+            LOG.error("failed to get STS for bucket:{}", bucketInfo.getName());
             throw SdkClientException.create("invalid STS");
         }
         PutObjectResponse response;
@@ -182,8 +182,8 @@ public class PBucket {
                 userMetas.put("checksum-crc32", checksum);
             }
             S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
-            if (enablePCache && file.length() > blockSize) {
-                response = putObjectPCache(s3Client, stsInfo, fullKey.toString(), file, userMetas);
+            if (file.length() > blockSize) {
+                response = putMultipart(s3Client, stsInfo, fullKey.toString(), file, userMetas);
             } else {
                 response = putObjectSingle(s3Client, stsInfo, fullKey.toString(), file, userMetas);
             }
@@ -203,7 +203,10 @@ public class PBucket {
 
     private PutObjectResponse putObjectSingle(S3Client s3Client, StsInfo stsInfo, String fullKey,
                                               File file, Map<String, String> userMetas) {
-        String host = pmsMgr.getPcp(fullKey);
+        String host = null;
+        if (enablePCache) {
+            host = pmsMgr.getPcp(fullKey);
+        }
         PcPath pcPath = new PcPath(name, fullKey, 0, 1);
 
         PutTask task = new PutTask(null, s3Client, stsInfo, host, pcPath,
@@ -217,8 +220,8 @@ public class PBucket {
         return response;
     }
 
-    private PutObjectResponse putObjectPCache(S3Client s3Client, StsInfo stsInfo, String fullKey, File file,
-                                              Map<String, String> userMetas) {
+    private PutObjectResponse putMultipart(S3Client s3Client, StsInfo stsInfo, String fullKey, File file,
+                                           Map<String, String> userMetas) {
         try {
             if (parallelManager == null) {
                 parallelManager = new ParallelManager();
@@ -240,7 +243,10 @@ public class PBucket {
             for (int i = 0; i < blockNum ; i++) {
 
                 partSize = Math.min(blockSize, leftSize);
-                String host = pmsMgr.getPcp(fullKey + i);
+                String host = null;
+                if (enablePCache) {
+                    host = pmsMgr.getPcp(fullKey + i);
+                }
                 PcPath pcPath = new PcPath(name, fullKey, i, blockNum);
 
                 PutTask task = new PutTask(latch, s3Client, stsInfo, host, pcPath,
@@ -275,7 +281,15 @@ public class PBucket {
 
     public GetObjectResponse getObject(String fileKey, String localFilePath) {
         Stats stats = threadTracer.get().newStats();
-        StsInfo stsInfo = getSTSInfo(name, fileKey);
+        BucketInfo bucketInfo = getBucketInfo();
+        if (null == bucketInfo) {
+            LOG.error("failed to get info of bucket:{}", name);
+            throw SdkClientException.create("invalid bucket");
+        }
+        RoutingResult routingResult = pmsMgr.getVirtualBucketSTSApi(bucketInfo.getName(),
+                bucketInfo.getPrefix(), Collections.singletonList(PcPermission.GetObject),
+                stsDurationSeconds);
+        StsInfo stsInfo = routingResult.getSTS();
         if (null == stsInfo) {
             LOG.error("failed to get STS for bukcet:{}", name);
             throw SdkClientException.create("invalid STS");
@@ -297,7 +311,7 @@ public class PBucket {
             GetObjectResponse response;
             S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
             if (enablePCache) {
-                response = getObjectPCache(s3Client, tempPath, stsInfo, fileKey);
+                response = getMultipart(s3Client, tempPath, stsInfo, fileKey);
             } else {
                 response =  getObjectSingle(s3Client, tempPath, stsInfo, fileKey);
             }
@@ -323,7 +337,11 @@ public class PBucket {
 
     private GetObjectResponse getObjectSingle(S3Client s3Client, Path localFilePath,
                                               StsInfo stsInfo, String fullKey) {
-        String host = pmsMgr.getPcp(fullKey);
+        String host = null;
+        if (enablePCache) {
+            host =  pmsMgr.getPcp(fullKey);
+        }
+
         PcPath pcPath = new PcPath(name, fullKey, 0, 1);
         GetTask taskInfo = new GetTask(null, s3Client, stsInfo, host, pcPath,
                 localFilePath.toString(), localFilePath.toFile().length(), blockSize);
@@ -332,8 +350,7 @@ public class PBucket {
         return GetObjectResponse.builder().eTag(taskInfo.getETag()).build();
     }
 
-    private GetObjectResponse getObjectPCache(
-            S3Client s3Client, Path localFilePath, StsInfo stsInfo, String fullKey) {
+    private GetObjectResponse getMultipart(S3Client s3Client, Path localFilePath, StsInfo stsInfo, String fullKey) {
         HeadObjectResponse headInfo;
         try {
             if (parallelManager == null) {
@@ -341,8 +358,10 @@ public class PBucket {
             }
             headInfo = S3Utils.headObject(s3Client, stsInfo.getBucketName(), fullKey);
             long fileSize = headInfo.contentLength();
-            LOG.info("file sie: {}", headInfo.contentLength());
-
+            LOG.info("file size: {}", headInfo.contentLength());
+            if (fileSize < blockSize) {
+                return getObjectSingle(s3Client, localFilePath, stsInfo, fullKey);
+            }
             int blockNum = (int) Math.ceil((double) fileSize / blockSize);
             CountDownLatch latch = new CountDownLatch(blockNum);
             long partSize = 0;
@@ -352,7 +371,10 @@ public class PBucket {
             for (int i = 0; i < blockNum; i++) {
                 partSize = Math.min(blockSize,leftSize);
                 leftSize -= partSize;
-                String host = pmsMgr.getPcp(fullKey + i);
+                String host = null;
+                if (enablePCache) {
+                    host = pmsMgr.getPcp(fullKey + i);
+                }
                 String localFile = String.format("%s.%d_%d", localFilePath, i, blockNum);
                 localFilePaths.add(localFile);
 
@@ -377,20 +399,5 @@ public class PBucket {
             throw SdkClientException.create("failed to get object, error: " + e.getMessage(), e);
         }
         return S3Utils.HeadObject2GetObjectResponse(headInfo);
-    }
-
-    private StsInfo getSTSInfo(String vbName, String fileKey) {
-        BucketInfo vbInfo = getBucketInfo();
-        if (null == vbInfo) {
-            LOG.error("failed to get info of bucket:{}", vbName);
-            throw SdkClientException.create("invalid bucket");
-        }
-        Path fullKey = Paths.get(FileUtils.mergePath(vbInfo.getPrefix(), fileKey));
-        String parentPath = fullKey.getParent() == null ? "" : fullKey.getParent().toString();
-        RoutingResult routingResult = pmsMgr.getVirtualBucketSTSApi(vbInfo.getName(),
-                parentPath, Collections.singletonList(PcPermission.GetObject),
-                stsDurationSeconds);
-        StsInfo stsInfo = routingResult.getSTS();
-        return stsInfo;
     }
 }

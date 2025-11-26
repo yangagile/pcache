@@ -82,4 +82,25 @@ public class TestFileUtils {
         }
     }
 
+    public static boolean deleteDirectory(File directory) {
+        if (directory.exists()) {
+            File[] files = directory.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.isDirectory()) {
+                        deleteDirectory(file);
+                    } else {
+                        file.delete();
+                    }
+                }
+            }
+            return directory.delete();
+        }
+        return false;  // 目录不存在
+    }
+
+    public static String getCurrentMethodName() {
+        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+        return stackTrace[2].getMethodName();
+    }
 }

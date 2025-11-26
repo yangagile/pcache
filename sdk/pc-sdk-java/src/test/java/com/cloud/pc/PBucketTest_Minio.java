@@ -17,9 +17,13 @@
 package com.cloud.pc;
 
 import com.cloud.pc.entity.Stats;
+import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.TestFileUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.junit.AfterClass;
 import org.junit.Assert;
+import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
@@ -30,17 +34,39 @@ import java.nio.file.Paths;
 
 
 public class PBucketTest_Minio {
-    String localRootPath = "/Users/yunyang/tmp/ptest/minio";
-    String bucketName = "test-minio";
-    String prefix = "test/";
-    String pmsUrl = "http://127.0.0.1:8080";
-    String ak = "ak-pc-test";
-    String sk = "KWBTBJJZTmZWb1F00lK1psg+2RMvRApY5uSDt7u1wpg=";
+    static String localRootPath = "/tmp/pcache/test/";
+    static String bucketName = "test-minio";
+    static String prefix = "pcache/test/";
+    static String pmsUrl = "http://127.0.0.1:8080";
+    static String ak = "ak-pc-test";
+    static String sk = "KWBTBJJZTmZWb1F00lK1psg+2RMvRApY5uSDt7u1wpg=";
+
+    @BeforeClass
+    public static void init() {
+        String tempDir = System.getProperty("java.io.tmpdir");
+        if (StringUtils.isNotBlank(tempDir)) {
+            localRootPath = FileUtils.mergePath(tempDir, "pcache/test/");
+        }
+        File rootDir = new File(localRootPath);
+        if (rootDir.exists() && rootDir.isDirectory()) {
+            TestFileUtils.deleteDirectory(rootDir);
+            System.out.println("Deleted directory " + localRootPath);
+        }
+    }
+
+    @AfterClass
+    public static void clean() {
+        File rootDir = new File(localRootPath);
+        if (rootDir.exists() && rootDir.isDirectory()) {
+            TestFileUtils.deleteDirectory(rootDir);
+            System.out.println("Directory and its contents have been deleted.");
+        }
+    }
 
     @Test
-    public void test_putObject_getObject_directly() throws Exception {
+    public void test_putObject_getObject_small_local() throws Exception {
         // create temp file
-        String fileName = "test_putObject_getObject_directly";
+        String fileName = TestFileUtils.getCurrentMethodName();
         Path localFilePath = Paths.get(localRootPath, fileName);
         String fileContent = "test putObject and getObject directly";
         TestFileUtils.createTestFile(localFilePath, fileContent);
@@ -53,14 +79,48 @@ public class PBucketTest_Minio {
         pbucket.setEnablePCache(false);
         PutObjectResponse response = pbucket.putObject(fileKey, localFilePath.toString());
         Assert.assertFalse("failed to put", StringUtils.isBlank(response.eTag()));
+        Stats stats = pbucket.getThreadTracer().get().getStats();
+        Assert.assertEquals("should put From Local", 1, stats.getCntLocal());
 
         // get file
         pbucket.getThreadTracer().get().resetStats();
         Path newLocalFile = Paths.get(localRootPath, fileName + ".new");
         GetObjectResponse getResponse = pbucket.getObject(fileKey, newLocalFile.toString());
         Assert.assertFalse("failed to get",StringUtils.isBlank(getResponse.eTag()));
+        pbucket.getThreadTracer().get().getStats();
+        Assert.assertEquals("should get From Local", 1, stats.getCntLocal());
 
-        Thread.sleep(10000);
+        // compare file
+        Assert.assertTrue("files are different",
+                TestFileUtils.compareFiles(localFilePath.toFile(), newLocalFile.toFile()));
+    }
+
+    @Test
+    public void test_putObject_getObject_small_pcp() throws Exception {
+        // create temp file
+        String fileName = TestFileUtils.getCurrentMethodName();
+        Path localFilePath = Paths.get(localRootPath, fileName);
+        String fileContent = "test putObject and getObject directly";
+        TestFileUtils.createTestFile(localFilePath, fileContent);
+        File testFile = localFilePath.toFile();
+        Assert.assertEquals("invalid test file", fileContent.getBytes().length, testFile.length());
+
+        // put file
+        String fileKey = prefix + fileName;
+        PBucket pbucket = new PBucket(pmsUrl, bucketName, ak, sk);
+        PutObjectResponse response = pbucket.putObject(fileKey, localFilePath.toString());
+        Assert.assertFalse("failed to put", StringUtils.isBlank(response.eTag()));
+        Stats stats = pbucket.getThreadTracer().get().getStats();
+        Assert.assertEquals("should put From Local", 1, stats.getCntPcp());
+
+        // get file
+        pbucket.getThreadTracer().get().resetStats();
+        Path newLocalFile = Paths.get(localRootPath, fileName + ".new");
+        GetObjectResponse getResponse = pbucket.getObject(fileKey, newLocalFile.toString());
+        Assert.assertFalse("failed to get",StringUtils.isBlank(getResponse.eTag()));
+        stats = pbucket.getThreadTracer().get().getStats();
+        Assert.assertEquals("should put From Local", 1, stats.getPcpCacheHit());
+
         // compare file
         Assert.assertTrue("files are different",
                 TestFileUtils.compareFiles(localFilePath.toFile(), newLocalFile.toFile()));
@@ -68,7 +128,7 @@ public class PBucketTest_Minio {
 
     @Test
     public void test_putObject_getObject_PCache() throws Exception {
-        String fileName = "test_putObject_getObject_PCache";
+        String fileName = TestFileUtils.getCurrentMethodName();
         int fileSize = 16*1024*1024;
         // put file with PCache
         Path localFilePath = Paths.get(localRootPath, fileName);
