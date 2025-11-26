@@ -46,9 +46,11 @@ type PBucket struct {
 	enablePCahche        bool
 	pmsMgr               *PmsManager
 	secretMgr            *SecretManager
+	workerChan           chan *model.Block
+	workerChanSize       int
+	worker               Worker
+	workerThreadNumber   int
 }
-
-type Option func(*PBucket)
 
 func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions []string) (*PBucket, error) {
 	if pmsUrl == "" {
@@ -70,8 +72,10 @@ func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions 
 		groupNumber:          6,
 		path:                 "",
 		enablePCahche:        true,
-		s3ClientCacheTimeSec: 300,
+		s3ClientCacheTimeSec: 600,
 		permissions:          permissions,
+		workerChanSize:       128,
+		workerThreadNumber:   6,
 	}
 
 	var err error
@@ -97,8 +101,30 @@ func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions 
 		return nil, err
 	}
 
+	pb.initWorker()
+
 	log.WithField("bucket info", pb.PrintInfo()).Infoln("create bucket done")
 	return pb, nil
+}
+func (pb *PBucket) initWorker() {
+	// start work
+	pb.workerChan = make(chan *model.Block, pb.workerChanSize)
+
+	wctx, cancel := context.WithCancel(context.Background())
+	pb.worker = Worker{
+		pb:     pb,
+		in:     pb.workerChan,
+		ctx:    wctx,
+		cancel: cancel,
+	}
+	for i := 0; i < pb.workerThreadNumber; i++ {
+		go pb.worker.worker()
+	}
+}
+
+func (pb *PBucket) Close() {
+	pb.worker.cancel()  // 发送取消信号
+	pb.worker.wg.Wait() // 等待工作线程结束
 }
 
 func (pb *PBucket) PrintInfo() string {
@@ -158,39 +184,35 @@ func (pb *PBucket) Get(ctx context.Context, objectKey, localFilePath string) err
 	}
 }
 
-// 从 S3 下载文件
 func (pb *PBucket) getSingleFile(ctx context.Context, key, localFile string) error {
 	pcpHost := ""
 	if pb.enablePCahche && pb.pcpCache != nil {
 		pcpHost = pb.pcpCache.Get(key)
 	}
-	blockInfo := &model.GetBlock{
-		Block: model.Block{
-			PcpHost:      pcpHost,
-			Bucket:       pb.bucket,
-			PartFile:     localFile,
-			Key:          key,
-			BlockNumber:  0,
-			TotalNumber:  1,
-			Size:         pb.bolckSize,
-			BlockSize:    pb.bolckSize,
-			TimeDuration: 0,
-			State:        model.STATE_FAIL,
-		},
+	var wg sync.WaitGroup
+	wg.Add(1)
+	blockInfo := &model.Block{
+		Wg:           &wg,
+		PcpHost:      pcpHost,
+		Bucket:       pb.bucket,
+		LocalFile:    localFile,
+		Key:          key,
+		BlockNumber:  0,
+		TotalNumber:  1,
+		Size:         pb.bolckSize,
+		BlockSize:    pb.bolckSize,
+		TimeDuration: 0,
+		State:        model.STATE_FAIL,
+		Type:         model.BLOCK_TYPE_GET,
 	}
-	worker := GetWorker{
-		wg:     nil,
-		client: pb,
-		ch:     nil,
-		chErr:  nil,
-	}
-	worker.GetBlock(blockInfo)
+	pb.workerChan <- blockInfo
+	wg.Wait()
 
 	stats := utils.GetStatCounter(ctx)
 	if stats == nil {
 		stats = utils.NewStats()
 	}
-	stats.Update(&blockInfo.Block)
+	stats.Update(blockInfo)
 	stats.End(ctx)
 
 	log.WithField("local file", localFile).WithField("bucket", pb.bucket).WithField("key", key).
@@ -216,71 +238,46 @@ func (pb *PBucket) getWithPCache(ctx context.Context, key, localFile string) err
 
 	blockCount := (fileSize + pb.bolckSize - 1) / pb.bolckSize
 	var wg sync.WaitGroup
-	chBlock := make(chan *model.GetBlock, blockCount)
-	chErrors := make(chan error, 1)
-	threadNumber := min(pb.groupNumber, int(blockCount))
+	wg.Add(int(blockCount))
 
-	for i := 0; i < threadNumber; i++ {
-		wg.Add(1)
-		worker := GetWorker{
-			wg:     &wg,
-			client: pb,
-			ch:     chBlock,
-			chErr:  chErrors,
+	blockList := make([]*model.Block, blockCount)
+
+	for i := int64(0); i < blockCount; i++ {
+		offset := i * pb.bolckSize
+		remaining := fileSize - offset
+		size := pb.bolckSize
+		if remaining < pb.bolckSize {
+			size = remaining
 		}
-		go worker.getWorker()
+		pcpHost := ""
+		if pb.enablePCahche && pb.pcpCache != nil {
+			pcpHost = pb.pcpCache.Get(key + strconv.FormatInt(i, 10))
+		}
+		blockList[i] = &model.Block{
+			Wg:           &wg,
+			PcpHost:      pcpHost,
+			Bucket:       pb.bucket,
+			LocalFile:    fmt.Sprintf("%s.%d_%d", localFile, i, blockCount),
+			Key:          key,
+			BlockNumber:  i,
+			TotalNumber:  blockCount,
+			Size:         size,
+			BlockSize:    pb.bolckSize,
+			TimeDuration: 0,
+			State:        model.STATE_FAIL,
+			Type:         model.BLOCK_TYPE_GET,
+		}
+		pb.workerChan <- blockList[i]
 	}
-
-	blockList := make([]*model.GetBlock, blockCount)
-	go func() {
-		defer close(chBlock)
-		for i := int64(0); i < blockCount; i++ {
-			offset := i * pb.bolckSize
-			remaining := fileSize - offset
-			size := pb.bolckSize
-			if remaining < pb.bolckSize {
-				size = remaining
-			}
-			pcpHost := ""
-			if pb.enablePCahche && pb.pcpCache != nil {
-				pcpHost = pb.pcpCache.Get(key + strconv.FormatInt(i, 10))
-			}
-			blockList[i] = &model.GetBlock{
-				Block: model.Block{
-					PcpHost:      pcpHost,
-					Bucket:       pb.bucket,
-					PartFile:     fmt.Sprintf("%s.%d_%d", localFile, i, blockCount),
-					Key:          key,
-					BlockNumber:  i,
-					TotalNumber:  blockCount,
-					Size:         size,
-					BlockSize:    pb.bolckSize,
-					TimeDuration: 0,
-					State:        model.STATE_FAIL,
-				},
-			}
-			chBlock <- blockList[i]
-		}
-	}()
-
 	wg.Wait()
-	select {
-	case err := <-chErrors:
-		log.WithError(err).WithField("bucket", pb.router.GetStsInfo().BucketName).
-			Errorln("failed to get block")
-		return err
-	default:
-	}
-	close(chErrors)
-
 	stats := utils.GetStatCounter(ctx)
 	if stats == nil {
 		stats = utils.NewStats()
 	}
 	localPartFiles := make([]string, blockCount)
 	for i := 0; i < int(blockCount); i++ {
-		localPartFiles[i] = blockList[i].PartFile
-		stats.Update(&blockList[i].Block)
+		localPartFiles[i] = blockList[i].LocalFile
+		stats.Update(blockList[i])
 	}
 	err = utils.MergeFiles(localPartFiles, localFile)
 	if err != nil {
@@ -307,34 +304,29 @@ func (pb *PBucket) putSingleFile(ctx context.Context, localFile, key string, fil
 	if pb.enablePCahche && pb.pcpCache != nil {
 		pcpHost = pb.pcpCache.Get(key)
 	}
-	blockInfo := &model.PutBlock{
-		Block: model.Block{
-			PcpHost:      pcpHost,
-			Bucket:       pb.bucket,
-			PartFile:     localFile,
-			Key:          key,
-			BlockNumber:  0,
-			TotalNumber:  1,
-			Size:         fileSize,
-			BlockSize:    pb.bolckSize,
-			TimeDuration: 0,
-			State:        model.STATE_FAIL,
-		},
-		UploadId: nil,
+	var wg sync.WaitGroup
+	wg.Add(1)
+	blockInfo := &model.Block{
+		Wg:           &wg,
+		PcpHost:      pcpHost,
+		Bucket:       pb.bucket,
+		LocalFile:    localFile,
+		Key:          key,
+		BlockNumber:  0,
+		TotalNumber:  1,
+		Size:         fileSize,
+		BlockSize:    pb.bolckSize,
+		TimeDuration: 0,
+		State:        model.STATE_FAIL,
 	}
-	worker := PutWorker{
-		wg:     nil,
-		client: pb,
-		ch:     nil,
-		chErr:  nil,
-	}
-	worker.PutBlock(blockInfo)
+	pb.workerChan <- blockInfo
+	wg.Wait()
 
 	stats := utils.GetStatCounter(ctx)
 	if stats == nil {
 		stats = utils.NewStats()
 	}
-	stats.Update(&blockInfo.Block)
+	stats.Update(blockInfo)
 	stats.End(ctx)
 
 	log.WithField("local file", localFile).WithField("bucket", pb.bucket).WithField("key", key).
@@ -356,66 +348,38 @@ func (pb *PBucket) putMultiPart(ctx context.Context, filename, key string, fileS
 
 	blockCount := (fileSize + pb.bolckSize - 1) / pb.bolckSize
 	var wg sync.WaitGroup
-	chBlock := make(chan *model.PutBlock, blockCount)
+	wg.Add(int(blockCount))
+	blockList := make([]*model.Block, blockCount)
 
-	chErrors := make(chan error, 1)
-	threadNumber := min(pb.groupNumber, int(blockCount))
-	for i := 0; i < threadNumber; i++ {
-		wg.Add(1)
-		worker := PutWorker{
-			wg:     &wg,
-			client: pb,
-			ch:     chBlock,
-			chErr:  chErrors,
+	for i := int64(0); i < blockCount; i++ {
+		offset := i * pb.bolckSize
+		remaining := fileSize - offset
+		size := pb.bolckSize
+		if remaining < pb.bolckSize {
+			size = remaining
 		}
-		go worker.putWorker()
+		pcpHost := ""
+		if pb.enablePCahche && pb.pcpCache != nil {
+			pcpHost = pb.pcpCache.Get(key + strconv.FormatInt(i, 10))
+		}
+		blockList[i] = &model.Block{
+			Wg:           &wg,
+			PcpHost:      pcpHost,
+			Bucket:       pb.bucket,
+			LocalFile:    filename,
+			Key:          key,
+			BlockNumber:  i,
+			TotalNumber:  blockCount,
+			Size:         size,
+			BlockSize:    pb.bolckSize,
+			TimeDuration: 0,
+			State:        model.STATE_FAIL,
+			Type:         0,
+			UploadId:     uploadID,
+		}
+		pb.workerChan <- blockList[i]
 	}
-
-	blockList := make([]*model.PutBlock, blockCount)
-
-	go func() {
-		defer close(chBlock)
-		for i := int64(0); i < blockCount; i++ {
-			offset := i * pb.bolckSize
-			remaining := fileSize - offset
-			size := pb.bolckSize
-			if remaining < pb.bolckSize {
-				size = remaining
-			}
-			pcpHost := ""
-			if pb.enablePCahche && pb.pcpCache != nil {
-				pcpHost = pb.pcpCache.Get(key + strconv.FormatInt(i, 10))
-			}
-			blockList[i] = &model.PutBlock{
-				Block: model.Block{
-					PcpHost:      pcpHost,
-					Bucket:       pb.bucket,
-					PartFile:     filename,
-					Key:          key,
-					BlockNumber:  i,
-					TotalNumber:  blockCount,
-					Size:         size,
-					BlockSize:    pb.bolckSize,
-					TimeDuration: 0,
-					State:        model.STATE_FAIL,
-				},
-				UploadId: uploadID,
-			}
-			chBlock <- blockList[i]
-		}
-	}()
-
 	wg.Wait()
-	select {
-	case err := <-chErrors:
-		pb.abortMultipartPut(key, uploadID)
-		log.WithError(err).WithField("bucket", pb.router.GetStsInfo().BucketName).WithField("key", key).
-			Errorln("failed to put block")
-		return err
-	default:
-	}
-	close(chErrors)
-
 	stats := utils.GetStatCounter(ctx)
 	if stats == nil {
 		stats = utils.NewStats()
@@ -427,7 +391,7 @@ func (pb *PBucket) putMultiPart(ctx context.Context, filename, key string, fileS
 			PartNumber: &PartNumber,
 			ETag:       blockList[i].Etag,
 		}
-		stats.Update(&blockList[i].Block)
+		stats.Update(blockList[i])
 	}
 
 	_, err = pb.s3ClientCache.Get().CompleteMultipartUpload(context.TODO(), &s3.CompleteMultipartUploadInput{

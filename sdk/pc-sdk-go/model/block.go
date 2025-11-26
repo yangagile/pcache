@@ -19,6 +19,7 @@ package model
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 const (
@@ -29,17 +30,27 @@ const (
 	STATE_OK_LOCAL_PCP_FAIL // 2
 )
 
+const (
+	BLOCK_TYPE_PUT = iota // 0
+	BLOCK_TYPE_GET
+)
+
 type Block struct {
+	Wg           *sync.WaitGroup
+	Type         int
 	PcpHost      string
 	Bucket       string
-	PartFile     string
 	Key          string
+	LocalFile    string
 	BlockNumber  int64
 	TotalNumber  int64
 	Size         int64
 	BlockSize    int64
+	UploadId     *string
+	Etag         *string
 	TimeDuration int64
 	State        int
+	Err          error
 }
 
 func (c *Block) GetPcPath() string {
@@ -49,12 +60,7 @@ func (c *Block) GetPcPath() string {
 	return fmt.Sprintf("%s%s/%s.%d_%d", c.PcpHost, c.Bucket, c.Key, c.BlockNumber, c.TotalNumber)
 }
 
-type GetBlock struct {
-	Block
-}
-
-type PutBlock struct {
-	Block
-	UploadId *string
-	Etag     *string
+func (c *Block) Error(err error) {
+	c.State = STATE_FAIL
+	c.Err = err
 }

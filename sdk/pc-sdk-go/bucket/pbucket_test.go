@@ -22,7 +22,6 @@ import (
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
 	"os"
 	"testing"
-	"time"
 )
 
 var testRootPrefix = "test/pcache/go/sdk/"
@@ -62,13 +61,6 @@ func setup() {
 func teardown() {
 	// clean temp files
 	os.Remove(testRootLocal)
-}
-
-type PhaseRecord struct {
-	Name      string
-	StartTime time.Time
-	EndTime   time.Time
-	Duration  time.Duration
 }
 
 func Test_PutGet_SmallFileFromLocal(t *testing.T) {
