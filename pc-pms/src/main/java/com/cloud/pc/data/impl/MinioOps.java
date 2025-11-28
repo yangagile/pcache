@@ -104,7 +104,7 @@ public class MinioOps implements DataOps {
         for (PcPermission permission : permissions) {
             switch (permission) {
                 case PutObject:
-                    permissionList.addAll(Arrays.asList("PutObject"));
+                    permissionList.add("PutObject");
                     continue;
                 case GetObject:
                     permissionList.add("GetObject");
@@ -114,8 +114,7 @@ public class MinioOps implements DataOps {
                     permissionList.add("DeleteObject");
                     continue;
                 case ListObject:
-                    permissionList.addAll(Arrays.asList("ListObjects", "ListObjectsV2",
-                            "ListMultipartUploads", "ListParts"));
+                    permissionList.add("ListBucket");
             }
         }
         return permissionList;
