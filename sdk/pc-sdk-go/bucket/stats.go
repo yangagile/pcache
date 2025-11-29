@@ -17,6 +17,7 @@
 package bucket
 
 import (
+	"fmt"
 	"math"
 )
 
@@ -58,6 +59,11 @@ func (s *BlockStats) Update(b *Block) {
 		s.TimeMin = b.TimeDuration
 	}
 	s.TimeTotal += b.TimeDuration
+}
+func (s BlockStats) String() string {
+	return fmt.Sprintf("Count(total:%d ok_pcp_cache:%d ok_pcp_local:%d ok_local:%d ok_local_pcp_fail:%d fail:%d) "+
+		"Time(avg:%d max:%d min:%d)ms", s.CountTotal, s.CountPcpCache, s.CountPcpLocal, s.CountLocal,
+		s.CountLocalPcpFail, s.CountFail, s.GetAverageTime(), s.TimeMax, s.TimeMin)
 }
 
 func (s *BlockStats) GetAverageTime() int64 {
@@ -114,6 +120,12 @@ func (s *FileStats) Update(f *FileTask) {
 	if f.Size < s.SizeMin {
 		s.SizeMin = f.Size
 	}
+}
+
+func (s FileStats) String() string {
+	return fmt.Sprintf("Count(total:%d ok:%d fail:%d) Size(total:%d avg:%d max:%d min:%d)bytes "+
+		"Time(avg:%d max:%d min:%d)ms", s.CountTotal, s.CountSuccess, s.CountFail,
+		s.SizeTotal, s.GetAverageSize(), s.SizeMax, s.SizeMin, s.GetAverageTime(), s.TimeMax, s.TimeMin)
 }
 
 func (s *FileStats) GetAverageTime() int64 {
