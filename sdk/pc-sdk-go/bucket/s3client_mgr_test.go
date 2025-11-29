@@ -17,30 +17,24 @@
 package bucket
 
 import (
-	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
 	"testing"
 )
 
-func Test_pcp_PutGet(t *testing.T) {
-	// 创建 PcpManager 实例
-	key := "user123"
-	pcpCache := NewPcpManager(30, nil)
-	node := pcpCache.get(key)
-	if node != "" {
-		t.Fatalf("failed to use PCP")
+func Test_NewS3ClientWithSTS(t *testing.T) {
+
+	newS3ClientMgr := &S3ClientManager{
+		s3Client:    nil,
+		router:      nil,
+		expiredTime: 100,
 	}
 
-	pcpTable := &utils.PcpTable{
-		Checksum: "new_checksum",
-		PcpList: []*utils.PhysicalNode{
-			{Host: "node1", Priority: 0.5},
-			{Host: "node2", Priority: 0.2},
-		},
+	s3Client := newS3ClientMgr.GetS3Client()
+	if s3Client != nil {
+		t.Fatalf("s3Client should be nil")
 	}
 
-	pcpCache = NewPcpManager(30, pcpTable)
-	node = pcpCache.get(key)
-	if node == "" {
-		t.Fatalf("failed to use PCP")
+	stsInfo := newS3ClientMgr.GetStsInfo()
+	if stsInfo != nil {
+		t.Fatalf("stsInfo should be nil")
 	}
 }

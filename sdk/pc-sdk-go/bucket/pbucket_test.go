@@ -60,11 +60,14 @@ func setup() {
 
 func teardown() {
 	// clean temp files
-	os.Remove(testRootLocal)
+	err := utils.CleanDirFromTempDir(testRootLocal)
+	if err != nil {
+		panic(fmt.Errorf("failed to delete test root path %v: %v", testRootLocal, err))
+	}
 }
 
 func Test_PutGet_SmallFileFromLocal(t *testing.T) {
-	ctx := utils.WithStatCounter(context.Background())
+	ctx := WithOptions(context.Background())
 
 	bucket, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
 	if err != nil {
@@ -87,23 +90,23 @@ func Test_PutGet_SmallFileFromLocal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
 	}
-	stat := utils.GetStatCounter(ctx)
+	stat := GetOptions(ctx).BlockStats
 	if stat.CountLocal <= 0 {
 		t.Fatalf("failed to put from local")
 	}
-	ctx = utils.WithStatCounter(context.Background())
+	ctx = WithOptions(context.Background())
 	err = bucket.Get(ctx, fileKey, downloadPath)
 	if err != nil {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
 	}
-	stat = utils.GetStatCounter(ctx)
+	stat = GetOptions(ctx).BlockStats
 	if stat.CountLocal <= 0 {
 		t.Fatalf("failed to put from local")
 	}
 }
 
 func Test_PutGet_SmallFileFromPcp(t *testing.T) {
-	ctx := utils.WithStatCounter(context.Background())
+	ctx := WithOptions(context.Background())
 
 	bucket, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
 	if err != nil {
@@ -123,23 +126,23 @@ func Test_PutGet_SmallFileFromPcp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
 	}
-	stat := utils.GetStatCounter(ctx)
+	stat := GetOptions(ctx).BlockStats
 	if stat.CountPcpLocal <= 0 {
 		t.Fatalf("failed to put from PCP")
 	}
-	ctx = utils.WithStatCounter(context.Background())
+	ctx = WithOptions(context.Background())
 	err = bucket.Get(ctx, fileKey, downloadPath)
 	if err != nil {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
 	}
-	stat = utils.GetStatCounter(ctx)
+	stat = GetOptions(ctx).BlockStats
 	if stat.CountPcpCache <= 0 {
 		t.Fatalf("failed to get from PCP")
 	}
 }
 
 func Test_PutWithPCache(t *testing.T) {
-	ctx := utils.WithStatCounter(context.Background())
+	ctx := WithOptions(context.Background())
 	pb, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
 	if err != nil {
 		t.Fatalf("failed to new PBucket with err:%v", err)
@@ -154,20 +157,62 @@ func Test_PutWithPCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to file:%v with err:%v", fileName, err)
 	}
-	stats := utils.GetStatCounter(ctx)
+	stats := GetOptions(ctx).BlockStats
 	if stats.CountPcpLocal <= 0 {
 		t.Fatalf("failed to use PCP")
 	}
 
 	downloadPath := testRootLocal + fileName + ".download"
 
-	ctx = utils.WithStatCounter(context.Background())
+	ctx = WithOptions(context.Background())
 	err = pb.Get(ctx, uploadKey, downloadPath)
 	if err != nil {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
 	}
-	stats = utils.GetStatCounter(ctx)
+	stats = GetOptions(ctx).BlockStats
 	if stats.CountPcpCache <= 0 {
 		t.Fatalf("failed to use PCP")
+	}
+}
+
+func Test_syncFolder(t *testing.T) {
+	ctx := WithOptions(context.Background())
+	GetOptions(ctx).DryRun = false
+	GetOptions(ctx).DebugMode = true
+
+	pb, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject,ListObject"})
+	if err != nil {
+		t.Fatalf("failed to new PBucket with err:%v", err)
+	}
+
+	folder := utils.MergePath(testRootLocal, utils.GetCurrentFunctionName())
+	fileSize := int64(10 * 1024 * 1024) // 10MB
+	_, err = utils.CreateTestFile(folder, "/f1", fileSize)
+	_, err = utils.CreateTestFile(folder, "/f2", fileSize)
+	prefix := utils.MergePath(testRootPrefix, utils.GetCurrentFunctionName())
+
+	// sync to bucket from local
+	err = pb.syncFolderToPrefix(ctx, folder, prefix)
+	if err != nil {
+		t.Fatalf("failed to sync folder:%v to prefix:%v", folder, prefix)
+	}
+	if GetOptions(ctx).FileStats.CountSuccess != 2 {
+		t.Fatalf("failed to sync folder:%v to prefix:%v", folder, prefix)
+	}
+
+	// clean source
+	err = utils.CleanDirFromTempDir(testRootLocal)
+	if err != nil {
+		panic(fmt.Errorf("failed to delete test root path %v: %v", testRootLocal, err))
+	}
+
+	// sync back to local from bucket
+	ctx = WithOptions(context.Background())
+	err = pb.syncPrefixToFolder(ctx, prefix, folder)
+	if err != nil {
+		t.Fatalf("failed to sync prefix:%v to folder:%v ", prefix, folder)
+	}
+	if GetOptions(ctx).FileStats.CountSuccess != 2 {
+		t.Fatalf("failed to sync prefix:%v to folder:%v ", prefix, folder)
 	}
 }

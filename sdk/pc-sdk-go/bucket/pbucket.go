@@ -21,38 +21,40 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	log "github.com/sirupsen/logrus"
-	"github.com/yangagile/pcache/sdk/pc-sdk-go/model"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
 	"os"
-	"strconv"
-	"sync"
+	"path/filepath"
+	"sync/atomic"
+	"time"
+	"unsafe"
 )
 
 type PBucket struct {
-	bucket               string
-	path                 string
-	ak                   string
-	sk                   string
-	permissions          []string
-	bolckSize            int64
-	groupNumber          int
-	s3ClientCache        *S3ClientManager
-	s3ClientCacheTimeSec int64
-	router               *model.Router
-	pcpCache             *PcpCache
-	pcpCacheTimeSec      int64
-	enablePCahche        bool
-	pmsMgr               *PmsManager
-	secretMgr            *SecretManager
-	workerChan           chan *model.Block
-	workerChanSize       int
-	worker               Worker
-	workerThreadNumber   int
+	bucket              string
+	path                string
+	ak                  string
+	sk                  string
+	permissions         []string
+	blockSize           int64
+	groupNumber         int
+	stsTtlSec           int64          // sts duration time
+	s3ClientMgrPtr      unsafe.Pointer // *S3ClientManager
+	S3ClientMgrUpdating int32          // 1: S3ClientMgr is updating
+	pcpMgrPtr           unsafe.Pointer // *PcpManager
+	pcpMgrTtlSec        int64          // pcp Table duration time
+	pcpMgrUpdating      int32          // 1: PcpManager is updating
+	pcpMgrEnable        bool
+	pmsMgr              *PmsManager
+	secretMgr           *SecretManager
+	workerChanSize      int
+	blockWorker         *BlockWorker
+	workerThreadNumber  int
+	fileThreadNumber    int
 }
 
 func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions []string) (*PBucket, error) {
+	// check parameters
 	if pmsUrl == "" {
 		return nil, fmt.Errorf("pclient: missing pmsUrl")
 	}
@@ -63,21 +65,24 @@ func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions 
 		return nil, fmt.Errorf("pclient: ak, sk required")
 	}
 
+	// init config variables
 	pb := &PBucket{
-		bucket:               bucket,
-		ak:                   ak,
-		sk:                   sk,
-		pcpCacheTimeSec:      60,
-		bolckSize:            5 * 1024 * 1024,
-		groupNumber:          6,
-		path:                 "",
-		enablePCahche:        true,
-		s3ClientCacheTimeSec: 600,
-		permissions:          permissions,
-		workerChanSize:       128,
-		workerThreadNumber:   6,
+		bucket:             bucket,
+		ak:                 ak,
+		sk:                 sk,
+		pcpMgrTtlSec:       60,
+		blockSize:          5 * 1024 * 1024,
+		groupNumber:        6,
+		path:               "",
+		pcpMgrEnable:       true,
+		stsTtlSec:          500,
+		permissions:        permissions,
+		workerChanSize:     128,
+		workerThreadNumber: 8,
+		fileThreadNumber:   8,
 	}
 
+	// init user manager
 	var err error
 	pb.secretMgr, err = NewSecretManager(ctx, ak, sk)
 	if err != nil {
@@ -85,145 +90,169 @@ func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions 
 		return nil, err
 	}
 
+	// init PMS manager
 	pb.pmsMgr, err = NewPmsManager(ctx, pmsUrl, pb.secretMgr)
 	if err != nil {
-		log.WithError(err).WithField("pmsUrl", pmsUrl).Errorln("failed to init PmsManager")
+		log.WithError(err).WithField("pmsUrl", pmsUrl).Errorln("failed to init PMS manager")
 		return nil, err
 	}
 
-	if pb.enablePCahche {
-		pb.pcpCache = NewPcpCache(pb.pcpCacheTimeSec, pb.getPcpTable)
+	// init PCP manager
+	if pb.pcpMgrEnable {
+		pcpTable, err := pb.getPcpTable("")
+		if err != nil {
+			log.WithError(err).WithField("pmsUrl", pmsUrl).Errorln("failed to init PCP manager")
+			return nil, err
+		}
+		newPcpMgr := NewPcpManager(time.Now().Unix()+pb.pcpMgrTtlSec*1000, pcpTable)
+		atomic.StorePointer(&pb.pcpMgrPtr, unsafe.Pointer(newPcpMgr))
 	}
 
-	pb.s3ClientCache, err = NewS3ClientCache(pb.s3ClientCacheTimeSec*1000, pb.getS3Client)
+	// init S3Client manager
+	s3ClientMgr, err := pb.newS3ClientManager()
 	if err != nil {
-		log.WithError(err).Errorln("failed to create s3 bucket cache")
+		log.WithError(err).WithField("pmsUrl", pmsUrl).Errorln("failed to init S3Client manager")
 		return nil, err
 	}
+	atomic.StorePointer(&pb.s3ClientMgrPtr, unsafe.Pointer(s3ClientMgr))
 
-	pb.initWorker()
-
+	// init block put/get worker threads
+	pb.blockWorker = NewBlockWorker(pb.workerThreadNumber, pb.workerChanSize)
+	pb.blockWorker.Start()
 	log.WithField("bucket info", pb.PrintInfo()).Infoln("create bucket done")
 	return pb, nil
 }
-func (pb *PBucket) initWorker() {
-	// start work
-	pb.workerChan = make(chan *model.Block, pb.workerChanSize)
-
-	wctx, cancel := context.WithCancel(context.Background())
-	pb.worker = Worker{
-		pb:     pb,
-		in:     pb.workerChan,
-		ctx:    wctx,
-		cancel: cancel,
-	}
-	for i := 0; i < pb.workerThreadNumber; i++ {
-		go pb.worker.worker()
-	}
-}
 
 func (pb *PBucket) Close() {
-	pb.worker.cancel()  // 发送取消信号
-	pb.worker.wg.Wait() // 等待工作线程结束
+	pb.blockWorker.Close()
 }
 
 func (pb *PBucket) PrintInfo() string {
 	return fmt.Sprintf("bucket: %s, path: %s", pb.bucket, pb.path)
 }
 
-func (pb *PBucket) getS3Client() (*s3.Client, error) {
-	var err error
+func (pb *PBucket) EnablePCache(pcpEnable bool) {
+	pb.pcpMgrEnable = pcpEnable
+}
 
-	pb.router, err = pb.pmsMgr.GetRoutingResult(pb.bucket, pb.path, pb.permissions)
+func (pb *PBucket) GetPcpHost(key string) string {
+	if !pb.pcpMgrEnable {
+		return ""
+	}
+	pcpMgr := (*PcpManager)(atomic.LoadPointer(&pb.pcpMgrPtr))
+	if pcpMgr.IsExpired() {
+		// only the first thread init the pcpMgrPtr
+		if atomic.CompareAndSwapInt32(&pb.pcpMgrUpdating, 0, 1) {
+			defer atomic.StoreInt32(&pb.pcpMgrUpdating, 0) // 确保更新完成后释放锁
+			pcpTable, err := pb.getPcpTable(pcpMgr.Checksum)
+			if err != nil {
+				// failed to update PCP list, record error and use the old
+				log.WithError(err).Errorln("failed to reset PCP manager")
+				return pcpMgr.get(key)
+			}
+			// no changes, just update the time
+			if pcpTable.Checksum == pcpMgr.Checksum {
+				pcpMgr.expiredTime = time.Now().Unix() + pb.pcpMgrTtlSec*1000
+				return pcpMgr.get(key)
+			}
+			// update new PCP m
+			newPcpMgr := NewPcpManager(time.Now().Unix()+pb.pcpMgrTtlSec*1000, pcpTable)
+			atomic.StorePointer(&pb.pcpMgrPtr, unsafe.Pointer(newPcpMgr))
+			return newPcpMgr.get(key)
+		}
+	}
+	// later threads use the old.
+	return pcpMgr.get(key)
+}
+
+func (pb *PBucket) newS3ClientManager() (*S3ClientManager, error) {
+	// apply STS from PMS
+	newRouter, err := pb.pmsMgr.GetRoutingResult(pb.bucket, pb.path, pb.permissions)
 	if err != nil {
-		log.WithError(err).Errorln("failed to get routing result")
+		log.WithError(err).Errorln("failed to get router!")
 		return nil, err
 	}
-	s3Client, err := utils.NewS3ClientWithSTS(context.TODO(), pb.router.GetStsInfo())
+
+	// create S3Client
+	s3Client, err := NewS3ClientWithSTS(context.TODO(), newRouter.GetStsInfo())
 	if err != nil {
 		log.WithError(err).Errorln("failed to create S3 bucket")
 		return nil, err
 	}
-	return s3Client, nil
+
+	// create S3 manager
+	newS3ClientMgr := &S3ClientManager{
+		s3Client:    s3Client,
+		router:      newRouter,
+		expiredTime: time.Now().Unix() + pb.stsTtlSec*1000,
+	}
+	return newS3ClientMgr, nil
 }
 
-func (pb *PBucket) getPcpTable(checksum string) *utils.PcpTable {
+func (pb *PBucket) GetS3ClientMgr() *S3ClientManager {
+	s3ClientMgr := (*S3ClientManager)(atomic.LoadPointer(&pb.s3ClientMgrPtr))
+	if s3ClientMgr == nil || s3ClientMgr.IsExpired() {
+		if atomic.CompareAndSwapInt32(&pb.S3ClientMgrUpdating, 0, 1) {
+			defer atomic.StoreInt32(&pb.S3ClientMgrUpdating, 0)
+			// the first thread reset the S3Client
+			newS3ClientMgr, err := pb.newS3ClientManager()
+			if err != nil {
+				// failed to create new, just use the old one
+				log.WithError(err).Errorln("failed to reset S3Client manager")
+			} else {
+				atomic.StorePointer(&pb.s3ClientMgrPtr, unsafe.Pointer(newS3ClientMgr))
+			}
+		}
+	}
+	return s3ClientMgr
+}
+
+func (pb *PBucket) GetS3Client() *s3.Client {
+	return pb.GetS3ClientMgr().GetS3Client()
+}
+
+func (pb *PBucket) GetStsInfo() *StsInfo {
+	return pb.GetS3ClientMgr().GetStsInfo()
+}
+
+func (pb *PBucket) getPcpTable(checksum string) (*utils.PcpTable, error) {
 	pcpTable, err := pb.pmsMgr.GetPcpList(checksum)
 	if err != nil {
 		log.WithError(err).WithField("iamUrl", pb.pmsMgr.urlProve.GetUrl()).
 			Errorln("failed to get pcp table")
-		return nil
+		return nil, err
 	}
-	return pcpTable
+	return pcpTable, nil
 }
 
-func (pb *PBucket) EnablePCache(enablePCache bool) {
-	pb.enablePCahche = enablePCache
-}
-
-func (pb *PBucket) Put(ctx context.Context, localFilePath, objectKey string) error {
-	fileInfo, err := os.Stat(localFilePath)
+func (pb *PBucket) Put(ctx context.Context, localPath, objectKey string) error {
+	fileInfo, err := os.Stat(localPath)
 	if err != nil {
-		log.WithError(err).WithField("localFilePath", localFilePath).
+		log.WithError(err).WithField("localPath", localPath).
 			Errorln("failed to open file")
 		return err
 	}
-	if fileInfo.Size() > pb.bolckSize {
-		return pb.putMultiPart(ctx, localFilePath, objectKey, fileInfo.Size())
-	} else {
-		return pb.putSingleFile(ctx, localFilePath, objectKey, fileInfo.Size())
+	blockCount := (fileInfo.Size() + pb.blockSize - 1) / pb.blockSize
+	fileTask := &FileTask{
+		s3Client:   pb.GetS3Client(),
+		stsInfo:    pb.GetStsInfo(),
+		Bucket:     pb.bucket,
+		Type:       FILE_TYPE_PUT,
+		LocalPath:  localPath,
+		RemoteKey:  objectKey,
+		Size:       fileInfo.Size(),
+		BlockSize:  pb.blockSize,
+		BlockCount: blockCount,
 	}
-}
-
-func (pb *PBucket) Get(ctx context.Context, objectKey, localFilePath string) error {
-
-	if pb.enablePCahche {
-		return pb.getWithPCache(ctx, objectKey, localFilePath)
-	} else {
-		return pb.getSingleFile(ctx, objectKey, localFilePath)
-	}
-}
-
-func (pb *PBucket) getSingleFile(ctx context.Context, key, localFile string) error {
-	pcpHost := ""
-	if pb.enablePCahche && pb.pcpCache != nil {
-		pcpHost = pb.pcpCache.Get(key)
-	}
-	var wg sync.WaitGroup
-	wg.Add(1)
-	blockInfo := &model.Block{
-		Wg:           &wg,
-		PcpHost:      pcpHost,
-		Bucket:       pb.bucket,
-		LocalFile:    localFile,
-		Key:          key,
-		BlockNumber:  0,
-		TotalNumber:  1,
-		Size:         pb.bolckSize,
-		BlockSize:    pb.bolckSize,
-		TimeDuration: 0,
-		State:        model.STATE_FAIL,
-		Type:         model.BLOCK_TYPE_GET,
-	}
-	pb.workerChan <- blockInfo
-	wg.Wait()
-
-	stats := utils.GetStatCounter(ctx)
-	if stats == nil {
-		stats = utils.NewStats()
-	}
-	stats.Update(blockInfo)
-	stats.End(ctx)
-
-	log.WithField("local file", localFile).WithField("bucket", pb.bucket).WithField("key", key).
-		WithField("stats", stats).Infoln("successfully get single file")
+	fileMgr := NewSingleFileManager(pb)
+	fileMgr.PutFile(ctx, fileTask)
 	return nil
 }
 
-func (pb *PBucket) getWithPCache(ctx context.Context, key, localFile string) error {
-	resp, err := utils.HeadObject(pb.s3ClientCache.Get(), pb.router.GetStsInfo().BucketName, key)
+func (pb *PBucket) Get(ctx context.Context, objectKey, localPath string) error {
+	resp, err := HeadObject(pb.GetS3Client(), pb.GetStsInfo().BucketName, objectKey)
 	if err != nil {
-		log.WithError(err).WithField("key", key).Errorln("failed to head object")
+		log.WithError(err).WithField("key", objectKey).Errorln("failed to head object")
 		return err
 	}
 	if *resp.ContentLength == 0 {
@@ -231,186 +260,136 @@ func (pb *PBucket) getWithPCache(ctx context.Context, key, localFile string) err
 	}
 	fileSize := *resp.ContentLength
 
-	// use getSingleFile for small file
-	if fileSize < pb.bolckSize {
-		return pb.getSingleFile(ctx, key, localFile)
+	blockCount := (fileSize + pb.blockSize - 1) / pb.blockSize
+	fileTask := &FileTask{
+		s3Client:   pb.GetS3Client(),
+		stsInfo:    pb.GetStsInfo(),
+		Bucket:     pb.bucket,
+		Type:       FILE_TYPE_GET,
+		LocalPath:  localPath,
+		RemoteKey:  objectKey,
+		Size:       fileSize,
+		BlockSize:  pb.blockSize,
+		BlockCount: blockCount,
 	}
+	fileMgr := NewSingleFileManager(pb)
+	fileMgr.GetFile(ctx, fileTask)
 
-	blockCount := (fileSize + pb.bolckSize - 1) / pb.bolckSize
-	var wg sync.WaitGroup
-	wg.Add(int(blockCount))
-
-	blockList := make([]*model.Block, blockCount)
-
-	for i := int64(0); i < blockCount; i++ {
-		offset := i * pb.bolckSize
-		remaining := fileSize - offset
-		size := pb.bolckSize
-		if remaining < pb.bolckSize {
-			size = remaining
-		}
-		pcpHost := ""
-		if pb.enablePCahche && pb.pcpCache != nil {
-			pcpHost = pb.pcpCache.Get(key + strconv.FormatInt(i, 10))
-		}
-		blockList[i] = &model.Block{
-			Wg:           &wg,
-			PcpHost:      pcpHost,
-			Bucket:       pb.bucket,
-			LocalFile:    fmt.Sprintf("%s.%d_%d", localFile, i, blockCount),
-			Key:          key,
-			BlockNumber:  i,
-			TotalNumber:  blockCount,
-			Size:         size,
-			BlockSize:    pb.bolckSize,
-			TimeDuration: 0,
-			State:        model.STATE_FAIL,
-			Type:         model.BLOCK_TYPE_GET,
-		}
-		pb.workerChan <- blockList[i]
-	}
-	wg.Wait()
-	stats := utils.GetStatCounter(ctx)
-	if stats == nil {
-		stats = utils.NewStats()
-	}
-	localPartFiles := make([]string, blockCount)
-	for i := 0; i < int(blockCount); i++ {
-		localPartFiles[i] = blockList[i].LocalFile
-		stats.Update(blockList[i])
-	}
-	err = utils.MergeFiles(localPartFiles, localFile)
-	if err != nil {
-		log.WithError(err).WithField("key", key).Errorln("failed to head object")
-		return err
-	}
-	stats.End(ctx)
-	log.WithField("file", localFile).WithField("bucket", pb.bucket).WithField("key", key).
-		WithField("stats", stats).Infoln("successfully get file")
 	return nil
 }
 
 func (pb *PBucket) abortMultipartPut(key string, uploadID *string) error {
-	_, err := pb.s3ClientCache.Get().AbortMultipartUpload(context.TODO(), &s3.AbortMultipartUploadInput{
-		Bucket:   aws.String(pb.router.GetStsInfo().BucketName),
+	_, err := pb.GetS3Client().AbortMultipartUpload(context.TODO(), &s3.AbortMultipartUploadInput{
+		Bucket:   aws.String(pb.GetStsInfo().BucketName),
 		Key:      aws.String(key),
 		UploadId: uploadID,
 	})
 	return err
 }
 
-func (pb *PBucket) putSingleFile(ctx context.Context, localFile, key string, fileSize int64) error {
-	pcpHost := ""
-	if pb.enablePCahche && pb.pcpCache != nil {
-		pcpHost = pb.pcpCache.Get(key)
-	}
-	var wg sync.WaitGroup
-	wg.Add(1)
-	blockInfo := &model.Block{
-		Wg:           &wg,
-		PcpHost:      pcpHost,
-		Bucket:       pb.bucket,
-		LocalFile:    localFile,
-		Key:          key,
-		BlockNumber:  0,
-		TotalNumber:  1,
-		Size:         fileSize,
-		BlockSize:    pb.bolckSize,
-		TimeDuration: 0,
-		State:        model.STATE_FAIL,
-	}
-	pb.workerChan <- blockInfo
-	wg.Wait()
+func (pb *PBucket) syncFolderToPrefix(ctx context.Context, folder, prefix string) error {
+	options := GetOptions(ctx)
+	fileMgr := NewFileManager(pb, pb.fileThreadNumber)
+	err := filepath.Walk(folder, func(localPath string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Printf("failed to access folder %s: %v", localPath, err)
+			return nil
+		}
 
-	stats := utils.GetStatCounter(ctx)
-	if stats == nil {
-		stats = utils.NewStats()
-	}
-	stats.Update(blockInfo)
-	stats.End(ctx)
+		// skip folder
+		if info.IsDir() {
+			return nil
+		}
 
-	log.WithField("local file", localFile).WithField("bucket", pb.bucket).WithField("key", key).
-		WithField("stats", stats).Infoln("successfully put single file")
-	return nil
+		// calculate relative key
+		relPath, err := filepath.Rel(folder, localPath)
+		if err != nil {
+			log.Printf("failed to get reltive path %s: %v", localPath, err)
+			return nil
+		}
+
+		// Convert to an S3-compatible path (replace Windows path separators with “/”).
+		s3Key := filepath.ToSlash(relPath)
+		if prefix != "" {
+			s3Key = filepath.ToSlash(filepath.Join(prefix, s3Key))
+		}
+
+		// new file task
+		blockCount := (info.Size() + pb.blockSize - 1) / pb.blockSize
+		fileTask := &FileTask{
+			s3Client:   pb.GetS3Client(),
+			stsInfo:    pb.GetStsInfo(),
+			Bucket:     pb.bucket,
+			Type:       FILE_TYPE_PUT,
+			LocalPath:  localPath,
+			RemoteKey:  s3Key,
+			Size:       info.Size(),
+			BlockSize:  pb.blockSize,
+			BlockCount: blockCount,
+		}
+
+		if options.DryRun {
+			log.Printf("will put %s to %s%s", localPath, pb.bucket, s3Key)
+		} else {
+			fileMgr.AddTask(ctx, fileTask)
+		}
+		return nil
+	})
+	if !options.DryRun {
+		fileMgr.Wait()
+	}
+	return err
 }
 
-func (pb *PBucket) putMultiPart(ctx context.Context, filename, key string, fileSize int64) error {
-	createResp, err := pb.s3ClientCache.Get().CreateMultipartUpload(context.TODO(), &s3.CreateMultipartUploadInput{
-		Bucket: aws.String(pb.router.GetStsInfo().BucketName),
-		Key:    aws.String(key),
-	})
-	if err != nil {
-		log.WithError(err).WithField("bucket", pb.router.GetStsInfo().BucketName).WithField("key", key).
-			Errorln("failed to CreateMultipartUpload")
-		return err
-	}
-	uploadID := createResp.UploadId
-
-	blockCount := (fileSize + pb.bolckSize - 1) / pb.bolckSize
-	var wg sync.WaitGroup
-	wg.Add(int(blockCount))
-	blockList := make([]*model.Block, blockCount)
-
-	for i := int64(0); i < blockCount; i++ {
-		offset := i * pb.bolckSize
-		remaining := fileSize - offset
-		size := pb.bolckSize
-		if remaining < pb.bolckSize {
-			size = remaining
+func (pb *PBucket) syncPrefixToFolder(ctx context.Context, prefix, folder string) error {
+	options := GetOptions(ctx)
+	fileMgr := NewFileManager(pb, pb.fileThreadNumber)
+	var err error
+	var continuationToken *string
+	for {
+		input := &s3.ListObjectsV2Input{
+			Bucket:            aws.String(pb.GetStsInfo().BucketName),
+			Prefix:            aws.String(prefix),
+			ContinuationToken: continuationToken, // 设置分页令牌
 		}
-		pcpHost := ""
-		if pb.enablePCahche && pb.pcpCache != nil {
-			pcpHost = pb.pcpCache.Get(key + strconv.FormatInt(i, 10))
-		}
-		blockList[i] = &model.Block{
-			Wg:           &wg,
-			PcpHost:      pcpHost,
-			Bucket:       pb.bucket,
-			LocalFile:    filename,
-			Key:          key,
-			BlockNumber:  i,
-			TotalNumber:  blockCount,
-			Size:         size,
-			BlockSize:    pb.bolckSize,
-			TimeDuration: 0,
-			State:        model.STATE_FAIL,
-			Type:         0,
-			UploadId:     uploadID,
-		}
-		pb.workerChan <- blockList[i]
-	}
-	wg.Wait()
-	stats := utils.GetStatCounter(ctx)
-	if stats == nil {
-		stats = utils.NewStats()
-	}
-	completedParts := make([]types.CompletedPart, blockCount)
-	for i := range int(blockCount) {
-		PartNumber := int32(blockList[i].BlockNumber + 1)
-		completedParts[i] = types.CompletedPart{
-			PartNumber: &PartNumber,
-			ETag:       blockList[i].Etag,
-		}
-		stats.Update(blockList[i])
-	}
 
-	_, err = pb.s3ClientCache.Get().CompleteMultipartUpload(context.TODO(), &s3.CompleteMultipartUploadInput{
-		Bucket:   aws.String(pb.router.GetStsInfo().BucketName),
-		Key:      aws.String(key),
-		UploadId: uploadID,
-		MultipartUpload: &types.CompletedMultipartUpload{
-			Parts: completedParts,
-		},
-	})
-	if err != nil {
-		log.WithError(err).WithField("BucketName", pb.router.GetStsInfo().BucketName).
-			WithField("key", key).Errorln("failed to CompleteMultipartUpload")
-		return err
+		result, err := pb.GetS3Client().ListObjectsV2(context.TODO(), input)
+		if err != nil {
+			log.WithError(err).WithField("prefix", prefix).Errorln("failed to list object")
+			break
+		}
+
+		for _, object := range result.Contents {
+			relKey, _ := filepath.Rel(prefix, *object.Key)
+			localFile := utils.MergePath(folder, relKey)
+			utils.EnsureParentDir(localFile)
+			blockCount := (*object.Size + pb.blockSize - 1) / pb.blockSize
+			fileTask := &FileTask{
+				s3Client:   pb.GetS3Client(),
+				stsInfo:    pb.GetStsInfo(),
+				Bucket:     pb.bucket,
+				Type:       FILE_TYPE_GET,
+				LocalPath:  localFile,
+				RemoteKey:  *object.Key,
+				Size:       *object.Size,
+				BlockSize:  pb.blockSize,
+				BlockCount: blockCount,
+			}
+			if options.DryRun {
+				log.Printf("will get %s from %s%s", localFile, pb.bucket, *object.Key)
+			} else {
+				fileMgr.AddTask(ctx, fileTask)
+			}
+		}
+
+		if *result.IsTruncated && result.NextContinuationToken != nil {
+			continuationToken = result.NextContinuationToken
+		} else {
+			break // exit loop
+		}
 	}
-
-	stats.End(ctx)
-	log.WithField("file", filename).WithField("bucket", pb.bucket).WithField("key", key).
-		WithField("stats", stats).Infoln("successfully put file")
-
-	return nil
+	if !options.DryRun {
+		fileMgr.Wait()
+	}
+	return err
 }

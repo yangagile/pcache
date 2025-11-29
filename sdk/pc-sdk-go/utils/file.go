@@ -152,3 +152,15 @@ func GetCurrentFunctionName() string {
 	}
 	return fn.Name()[pos:]
 }
+
+func EnsureParentDir(filePath string) error {
+	parentDir := filepath.Dir(filePath)
+	return os.MkdirAll(parentDir, 0755)
+}
+
+func CleanDirFromTempDir(directoryPath string) error {
+	if strings.HasPrefix(directoryPath, os.TempDir()) {
+		return os.RemoveAll(directoryPath)
+	}
+	return nil
+}

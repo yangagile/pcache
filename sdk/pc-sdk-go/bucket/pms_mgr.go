@@ -19,7 +19,6 @@ package bucket
 import (
 	"context"
 	log "github.com/sirupsen/logrus"
-	"github.com/yangagile/pcache/sdk/pc-sdk-go/model"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
 )
 
@@ -93,9 +92,9 @@ func (pm *PmsManager) GetPmsList(pmsUrl string) ([]*PmsUrlStats, error) {
 	return curPmsUrls, nil
 }
 
-func (pm *PmsManager) GetRoutingResult(bucket, path string, permission []string) (*model.Router, error) {
+func (pm *PmsManager) GetRoutingResult(bucket, path string, permission []string) (*Router, error) {
 	var err error
-	var routing *model.Router
+	var routing *Router
 	for i := 0; i < pm.retryTimes; i++ {
 		routing, err = pm.interGetRoutingResult(bucket, path, permission)
 		if err == nil {
@@ -107,7 +106,7 @@ func (pm *PmsManager) GetRoutingResult(bucket, path string, permission []string)
 	return routing, err
 }
 
-func (pm *PmsManager) interGetRoutingResult(bucket, path string, permission []string) (*model.Router, error) {
+func (pm *PmsManager) interGetRoutingResult(bucket, path string, permission []string) (*Router, error) {
 	url := utils.MergePath(pm.urlProve.GetUrl(), URL_PATH_STS+bucket+"/sts")
 	strParams := make(map[string]string)
 	if path != "" {
@@ -131,7 +130,7 @@ func (pm *PmsManager) interGetRoutingResult(bucket, path string, permission []st
 	}
 	header["X-TOKEN"] = pm.secretMgr.GetToken(claims, 1800*1000)
 
-	var routing model.Router
+	var routing Router
 	err := utils.GetAndParseJSON(url, &allParams, header, &routing)
 	if err != nil {
 		pm.urlProve.ReportFail(url)

@@ -17,30 +17,37 @@
 package bucket
 
 import (
-	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
-	"testing"
+	"context"
 )
 
-func Test_pcp_PutGet(t *testing.T) {
-	// 创建 PcpManager 实例
-	key := "user123"
-	pcpCache := NewPcpManager(30, nil)
-	node := pcpCache.get(key)
-	if node != "" {
-		t.Fatalf("failed to use PCP")
-	}
+type Options struct {
+	DryRun      bool
+	DebugMode   bool
+	EnableStats bool
+	IsSmallFile bool
+	BlockStats  *BlockStats
+	FileStats   *FileStats
+}
 
-	pcpTable := &utils.PcpTable{
-		Checksum: "new_checksum",
-		PcpList: []*utils.PhysicalNode{
-			{Host: "node1", Priority: 0.5},
-			{Host: "node2", Priority: 0.2},
-		},
+func NewOptions() *Options {
+	return &Options{
+		DryRun:      false,
+		DebugMode:   false,
+		EnableStats: true,
+		IsSmallFile: false,
+		BlockStats:  NewBlockStats(),
+		FileStats:   NewFileStats(),
 	}
+}
 
-	pcpCache = NewPcpManager(30, pcpTable)
-	node = pcpCache.get(key)
-	if node == "" {
-		t.Fatalf("failed to use PCP")
+func WithOptions(ctx context.Context) context.Context {
+	o := NewOptions()
+	return context.WithValue(ctx, "options", o)
+}
+
+func GetOptions(ctx context.Context) *Options {
+	if o, ok := ctx.Value("options").(*Options); ok {
+		return o
 	}
+	return NewOptions()
 }

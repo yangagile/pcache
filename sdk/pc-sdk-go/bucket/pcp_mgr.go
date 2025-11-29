@@ -18,40 +18,34 @@ package bucket
 
 import (
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
-	"sync"
 	"time"
 )
 
-// PcpTable 包含节点列表和校验和
-
-// PcpCache 缓存结构
-type PcpCache struct {
-	hashRing      *utils.ConsistentHash
-	checksum      string
-	pcpMap        map[string]*utils.PhysicalNode
-	updateTime    int64
-	mutex         sync.RWMutex
-	cacheDuration int64                                 // 缓存持续时间（毫秒）
-	fetchFunc     func(checksum string) *utils.PcpTable // 获取节点信息的函数
+type PcpManager struct {
+	hashRing    *utils.ConsistentHash
+	pcpMap      map[string]*utils.PhysicalNode
+	Checksum    string
+	expiredTime int64
 }
 
-// NewPcpCache 创建新的 PcpCache 实例
-func NewPcpCache(cacheSeconds int64, fetchFunc func(string) *utils.PcpTable) *PcpCache {
-	pcpCache := &PcpCache{
-		hashRing:      utils.NewConsistentHash(),
-		pcpMap:        make(map[string]*utils.PhysicalNode),
-		cacheDuration: cacheSeconds * 1000, // 转换为毫秒
-		fetchFunc:     fetchFunc,
+func (m *PcpManager) IsExpired() bool {
+	return m.expiredTime < time.Now().Unix()
+}
+
+func NewPcpManager(expiredTime int64, pcpTable *utils.PcpTable) *PcpManager {
+	pcpCache := &PcpManager{
+		hashRing:    utils.NewConsistentHash(),
+		pcpMap:      make(map[string]*utils.PhysicalNode),
+		expiredTime: expiredTime,
 	}
-	pcpCache.update()
+	pcpCache.update(pcpTable)
 	return pcpCache
 }
 
-// updateCache 更新缓存
-func (c *PcpCache) updateCache(newInfo *utils.PcpTable) {
+// update cache
+func (c *PcpManager) updateCache(newInfo *utils.PcpTable) {
 	tmpMap := make(map[string]*utils.PhysicalNode)
 
-	// 处理新节点或更新的节点
 	for _, node := range newInfo.PcpList {
 		if lastNode, exists := c.pcpMap[node.Host]; exists {
 			if node.Priority != lastNode.Priority {
@@ -65,41 +59,21 @@ func (c *PcpCache) updateCache(newInfo *utils.PcpTable) {
 		delete(c.pcpMap, node.Host)
 	}
 
-	// 删除不再存在的节点
 	for _, node := range c.pcpMap {
 		c.hashRing.RemoveNode(node)
 	}
 
 	c.pcpMap = tmpMap
-	c.checksum = newInfo.Checksum
+	c.Checksum = newInfo.Checksum
 }
 
-func (c *PcpCache) update() {
-	pcpTable := c.fetchFunc(c.checksum)
-	if pcpTable == nil {
-		return
-	}
-	// 获取写锁进行更新
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	c.updateTime = time.Now().UnixMilli()
-	if pcpTable.Checksum != c.checksum {
-		c.checksum = pcpTable.Checksum
+func (c *PcpManager) update(pcpTable *utils.PcpTable) {
+	if pcpTable != nil && pcpTable.Checksum != c.Checksum {
+		c.Checksum = pcpTable.Checksum
 		c.updateCache(pcpTable)
 	}
 }
 
-// Get 获取 key 对应的节点
-func (c *PcpCache) Get(key string) string {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-
-	currentTime := time.Now().UnixMilli()
-	if currentTime-c.updateTime < c.cacheDuration {
-		go c.update()
-	}
-
-	node := c.hashRing.GetNode(key)
-	return node
+func (c *PcpManager) get(key string) string {
+	return c.hashRing.GetNode(key)
 }

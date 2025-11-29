@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package model
+package bucket
 
 type StsInfo struct {
 	AccessKey     string `json:"accessKey"`
@@ -25,7 +25,7 @@ type StsInfo struct {
 	Path          string `json:"path"`
 	StorageType   string `json:"storageType"`
 	Region        string `json:"region"`
-	Expiration    int64  `json:"expiration"` // 使用 int64 存储时间戳
+	Expiration    int64  `json:"expiration"`
 }
 
 type RoutingPolicy struct {

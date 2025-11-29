@@ -17,44 +17,56 @@
 package bucket
 
 import (
+	"context"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"sync"
 	"time"
 )
 
 type S3ClientManager struct {
-	mutex       sync.RWMutex
 	s3Client    *s3.Client
+	router      *Router
 	expiredTime int64
-	ttl         int64
-	createFunc  func() (*s3.Client, error)
 }
 
-func NewS3ClientCache(ttl int64, createFunc func() (*s3.Client, error)) (*S3ClientManager, error) {
-	s3ClientCache := &S3ClientManager{
-		ttl:         ttl,
-		expiredTime: time.Now().UnixMilli() + ttl,
-	}
-	var err error
-	s3ClientCache.s3Client, err = createFunc()
-	return s3ClientCache, err
+func (c *S3ClientManager) IsExpired() bool {
+	return c.expiredTime < time.Now().Unix()
 }
 
-func (c *S3ClientManager) Get() *s3.Client {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	if time.Now().UnixMilli() > c.expiredTime {
-		go func() {
-			s3Cli, err := c.createFunc()
-			if err != nil {
-				return
-			}
-			c.mutex.Lock()
-			defer c.mutex.Unlock()
-			c.s3Client = s3Cli
-			c.expiredTime = time.Now().UnixMilli() + c.ttl
-		}()
-	}
+func (c *S3ClientManager) GetS3Client() *s3.Client {
 	return c.s3Client
+}
+
+func (c *S3ClientManager) GetStsInfo() *StsInfo {
+	if c.router == nil {
+		return nil
+	}
+	return c.router.GetStsInfo()
+}
+
+func NewS3ClientWithSTS(ctx context.Context, stsInfo *StsInfo) (*s3.Client, error) {
+	creds := credentials.NewStaticCredentialsProvider(stsInfo.AccessKey,
+		stsInfo.AccessSecret, stsInfo.SecurityToken)
+
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithCredentialsProvider(creds),
+		config.WithRegion(stsInfo.Region))
+	if err != nil {
+		return nil, err
+	}
+	cfg.BaseEndpoint = aws.String(stsInfo.Endpoint)
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.UsePathStyle = true
+	})
+	return client, nil
+}
+
+func HeadObject(s3Client *s3.Client, bucketName string, objectKey string) (*s3.HeadObjectOutput, error) {
+	input := &s3.HeadObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	}
+	return s3Client.HeadObject(context.TODO(), input)
 }
