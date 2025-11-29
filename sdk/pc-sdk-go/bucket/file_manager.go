@@ -123,7 +123,7 @@ func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
 		if remaining < fileTask.BlockSize {
 			size = remaining
 		}
-		pcpHost := m.pb.GetPcpHost(fileTask.RemoteKey + strconv.FormatInt(i, 10))
+		pcpHost := m.pb.getPcpHost(fileTask.RemoteKey + strconv.FormatInt(i, 10))
 		blockList[i] = &Block{
 			File:         fileTask,
 			PcpHost:      pcpHost,
@@ -189,7 +189,7 @@ func (m *FileManager) GetFile(ctx context.Context, fileTask *FileTask) error {
 		if remaining < fileTask.BlockSize {
 			size = remaining
 		}
-		pcpHost := m.pb.GetPcpHost(fileTask.RemoteKey + strconv.FormatInt(i, 10))
+		pcpHost := m.pb.getPcpHost(fileTask.RemoteKey + strconv.FormatInt(i, 10))
 		blockList[i] = &Block{
 			File:         fileTask,
 			PcpHost:      pcpHost,

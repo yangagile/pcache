@@ -192,7 +192,7 @@ func Test_syncFolder(t *testing.T) {
 	prefix := utils.MergePath(testRootPrefix, utils.GetCurrentFunctionName())
 
 	// sync to bucket from local
-	err = pb.syncFolderToPrefix(ctx, folder, prefix)
+	err = pb.SyncFolderToPrefix(ctx, folder, prefix)
 	if err != nil {
 		t.Fatalf("failed to sync folder:%v to prefix:%v", folder, prefix)
 	}
@@ -208,7 +208,7 @@ func Test_syncFolder(t *testing.T) {
 
 	// sync back to local from bucket
 	ctx = WithOptions(context.Background())
-	err = pb.syncPrefixToFolder(ctx, prefix, folder)
+	err = pb.SyncPrefixToFolder(ctx, prefix, folder)
 	if err != nil {
 		t.Fatalf("failed to sync prefix:%v to folder:%v ", prefix, folder)
 	}

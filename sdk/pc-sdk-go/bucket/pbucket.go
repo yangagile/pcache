@@ -135,7 +135,168 @@ func (pb *PBucket) EnablePCache(pcpEnable bool) {
 	pb.pcpMgrEnable = pcpEnable
 }
 
-func (pb *PBucket) GetPcpHost(key string) string {
+func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string) error {
+	options := GetOptions(ctx)
+	fileMgr := NewFileManager(pb, pb.fileThreadNumber)
+	err := filepath.Walk(folder, func(localPath string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Printf("failed to access folder %s: %v", localPath, err)
+			return nil
+		}
+
+		// skip folder
+		if info.IsDir() {
+			return nil
+		}
+
+		// calculate relative key
+		relPath, err := filepath.Rel(folder, localPath)
+		if err != nil {
+			log.Printf("failed to get reltive path %s: %v", localPath, err)
+			return nil
+		}
+
+		// Convert to an S3-compatible path (replace Windows path separators with “/”).
+		s3Key := filepath.ToSlash(relPath)
+		if prefix != "" {
+			s3Key = filepath.ToSlash(filepath.Join(prefix, s3Key))
+		}
+
+		// new file task
+		blockCount := (info.Size() + pb.blockSize - 1) / pb.blockSize
+		fileTask := &FileTask{
+			s3Client:   pb.getS3Client(),
+			stsInfo:    pb.getStsInfo(),
+			Bucket:     pb.bucket,
+			Type:       FILE_TYPE_PUT,
+			LocalPath:  localPath,
+			RemoteKey:  s3Key,
+			Size:       info.Size(),
+			BlockSize:  pb.blockSize,
+			BlockCount: blockCount,
+		}
+
+		if options.DryRun {
+			log.Printf("will put %s to %s%s", localPath, pb.bucket, s3Key)
+		} else {
+			fileMgr.AddTask(ctx, fileTask)
+		}
+		return nil
+	})
+	if !options.DryRun {
+		fileMgr.Wait()
+	}
+	return err
+}
+
+func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string) error {
+	options := GetOptions(ctx)
+	fileMgr := NewFileManager(pb, pb.fileThreadNumber)
+	var err error
+	var continuationToken *string
+	for {
+		input := &s3.ListObjectsV2Input{
+			Bucket:            aws.String(pb.getStsInfo().BucketName),
+			Prefix:            aws.String(prefix),
+			ContinuationToken: continuationToken, // 设置分页令牌
+		}
+
+		result, err := pb.getS3Client().ListObjectsV2(context.TODO(), input)
+		if err != nil {
+			log.WithError(err).WithField("prefix", prefix).Errorln("failed to list object")
+			break
+		}
+
+		for _, object := range result.Contents {
+			relKey, _ := filepath.Rel(prefix, *object.Key)
+			localFile := utils.MergePath(folder, relKey)
+			utils.EnsureParentDir(localFile)
+			blockCount := (*object.Size + pb.blockSize - 1) / pb.blockSize
+			fileTask := &FileTask{
+				s3Client:   pb.getS3Client(),
+				stsInfo:    pb.getStsInfo(),
+				Bucket:     pb.bucket,
+				Type:       FILE_TYPE_GET,
+				LocalPath:  localFile,
+				RemoteKey:  *object.Key,
+				Size:       *object.Size,
+				BlockSize:  pb.blockSize,
+				BlockCount: blockCount,
+			}
+			if options.DryRun {
+				log.Printf("will get %s from %s%s", localFile, pb.bucket, *object.Key)
+			} else {
+				fileMgr.AddTask(ctx, fileTask)
+			}
+		}
+
+		if *result.IsTruncated && result.NextContinuationToken != nil {
+			continuationToken = result.NextContinuationToken
+		} else {
+			break // exit loop
+		}
+	}
+	if !options.DryRun {
+		fileMgr.Wait()
+	}
+	return err
+}
+
+func (pb *PBucket) Put(ctx context.Context, localPath, objectKey string) error {
+	fileInfo, err := os.Stat(localPath)
+	if err != nil {
+		log.WithError(err).WithField("localPath", localPath).
+			Errorln("failed to open file")
+		return err
+	}
+	blockCount := (fileInfo.Size() + pb.blockSize - 1) / pb.blockSize
+	fileTask := &FileTask{
+		s3Client:   pb.getS3Client(),
+		stsInfo:    pb.getStsInfo(),
+		Bucket:     pb.bucket,
+		Type:       FILE_TYPE_PUT,
+		LocalPath:  localPath,
+		RemoteKey:  objectKey,
+		Size:       fileInfo.Size(),
+		BlockSize:  pb.blockSize,
+		BlockCount: blockCount,
+	}
+	fileMgr := NewSingleFileManager(pb)
+	fileMgr.PutFile(ctx, fileTask)
+	return nil
+}
+
+func (pb *PBucket) Get(ctx context.Context, objectKey, localPath string) error {
+	resp, err := HeadObject(pb.getS3Client(), pb.getStsInfo().BucketName, objectKey)
+	if err != nil {
+		log.WithError(err).WithField("key", objectKey).Errorln("failed to head object")
+		return err
+	}
+	if *resp.ContentLength == 0 {
+		return fmt.Errorf("object size is 0")
+	}
+	fileSize := *resp.ContentLength
+
+	blockCount := (fileSize + pb.blockSize - 1) / pb.blockSize
+	fileTask := &FileTask{
+		s3Client:   pb.getS3Client(),
+		stsInfo:    pb.getStsInfo(),
+		Bucket:     pb.bucket,
+		Type:       FILE_TYPE_GET,
+		LocalPath:  localPath,
+		RemoteKey:  objectKey,
+		Size:       fileSize,
+		BlockSize:  pb.blockSize,
+		BlockCount: blockCount,
+	}
+	fileMgr := NewSingleFileManager(pb)
+	fileMgr.GetFile(ctx, fileTask)
+
+	return nil
+}
+
+// below is private function
+func (pb *PBucket) getPcpHost(key string) string {
 	if !pb.pcpMgrEnable {
 		return ""
 	}
@@ -189,7 +350,7 @@ func (pb *PBucket) newS3ClientManager() (*S3ClientManager, error) {
 	return newS3ClientMgr, nil
 }
 
-func (pb *PBucket) GetS3ClientMgr() *S3ClientManager {
+func (pb *PBucket) getS3ClientMgr() *S3ClientManager {
 	s3ClientMgr := (*S3ClientManager)(atomic.LoadPointer(&pb.s3ClientMgrPtr))
 	if s3ClientMgr == nil || s3ClientMgr.IsExpired() {
 		if atomic.CompareAndSwapInt32(&pb.S3ClientMgrUpdating, 0, 1) {
@@ -207,12 +368,12 @@ func (pb *PBucket) GetS3ClientMgr() *S3ClientManager {
 	return s3ClientMgr
 }
 
-func (pb *PBucket) GetS3Client() *s3.Client {
-	return pb.GetS3ClientMgr().GetS3Client()
+func (pb *PBucket) getS3Client() *s3.Client {
+	return pb.getS3ClientMgr().GetS3Client()
 }
 
-func (pb *PBucket) GetStsInfo() *StsInfo {
-	return pb.GetS3ClientMgr().GetStsInfo()
+func (pb *PBucket) getStsInfo() *StsInfo {
+	return pb.getS3ClientMgr().GetStsInfo()
 }
 
 func (pb *PBucket) getPcpTable(checksum string) (*utils.PcpTable, error) {
@@ -225,171 +386,11 @@ func (pb *PBucket) getPcpTable(checksum string) (*utils.PcpTable, error) {
 	return pcpTable, nil
 }
 
-func (pb *PBucket) Put(ctx context.Context, localPath, objectKey string) error {
-	fileInfo, err := os.Stat(localPath)
-	if err != nil {
-		log.WithError(err).WithField("localPath", localPath).
-			Errorln("failed to open file")
-		return err
-	}
-	blockCount := (fileInfo.Size() + pb.blockSize - 1) / pb.blockSize
-	fileTask := &FileTask{
-		s3Client:   pb.GetS3Client(),
-		stsInfo:    pb.GetStsInfo(),
-		Bucket:     pb.bucket,
-		Type:       FILE_TYPE_PUT,
-		LocalPath:  localPath,
-		RemoteKey:  objectKey,
-		Size:       fileInfo.Size(),
-		BlockSize:  pb.blockSize,
-		BlockCount: blockCount,
-	}
-	fileMgr := NewSingleFileManager(pb)
-	fileMgr.PutFile(ctx, fileTask)
-	return nil
-}
-
-func (pb *PBucket) Get(ctx context.Context, objectKey, localPath string) error {
-	resp, err := HeadObject(pb.GetS3Client(), pb.GetStsInfo().BucketName, objectKey)
-	if err != nil {
-		log.WithError(err).WithField("key", objectKey).Errorln("failed to head object")
-		return err
-	}
-	if *resp.ContentLength == 0 {
-		return fmt.Errorf("object size is 0")
-	}
-	fileSize := *resp.ContentLength
-
-	blockCount := (fileSize + pb.blockSize - 1) / pb.blockSize
-	fileTask := &FileTask{
-		s3Client:   pb.GetS3Client(),
-		stsInfo:    pb.GetStsInfo(),
-		Bucket:     pb.bucket,
-		Type:       FILE_TYPE_GET,
-		LocalPath:  localPath,
-		RemoteKey:  objectKey,
-		Size:       fileSize,
-		BlockSize:  pb.blockSize,
-		BlockCount: blockCount,
-	}
-	fileMgr := NewSingleFileManager(pb)
-	fileMgr.GetFile(ctx, fileTask)
-
-	return nil
-}
-
 func (pb *PBucket) abortMultipartPut(key string, uploadID *string) error {
-	_, err := pb.GetS3Client().AbortMultipartUpload(context.TODO(), &s3.AbortMultipartUploadInput{
-		Bucket:   aws.String(pb.GetStsInfo().BucketName),
+	_, err := pb.getS3Client().AbortMultipartUpload(context.TODO(), &s3.AbortMultipartUploadInput{
+		Bucket:   aws.String(pb.getStsInfo().BucketName),
 		Key:      aws.String(key),
 		UploadId: uploadID,
 	})
-	return err
-}
-
-func (pb *PBucket) syncFolderToPrefix(ctx context.Context, folder, prefix string) error {
-	options := GetOptions(ctx)
-	fileMgr := NewFileManager(pb, pb.fileThreadNumber)
-	err := filepath.Walk(folder, func(localPath string, info os.FileInfo, err error) error {
-		if err != nil {
-			log.Printf("failed to access folder %s: %v", localPath, err)
-			return nil
-		}
-
-		// skip folder
-		if info.IsDir() {
-			return nil
-		}
-
-		// calculate relative key
-		relPath, err := filepath.Rel(folder, localPath)
-		if err != nil {
-			log.Printf("failed to get reltive path %s: %v", localPath, err)
-			return nil
-		}
-
-		// Convert to an S3-compatible path (replace Windows path separators with “/”).
-		s3Key := filepath.ToSlash(relPath)
-		if prefix != "" {
-			s3Key = filepath.ToSlash(filepath.Join(prefix, s3Key))
-		}
-
-		// new file task
-		blockCount := (info.Size() + pb.blockSize - 1) / pb.blockSize
-		fileTask := &FileTask{
-			s3Client:   pb.GetS3Client(),
-			stsInfo:    pb.GetStsInfo(),
-			Bucket:     pb.bucket,
-			Type:       FILE_TYPE_PUT,
-			LocalPath:  localPath,
-			RemoteKey:  s3Key,
-			Size:       info.Size(),
-			BlockSize:  pb.blockSize,
-			BlockCount: blockCount,
-		}
-
-		if options.DryRun {
-			log.Printf("will put %s to %s%s", localPath, pb.bucket, s3Key)
-		} else {
-			fileMgr.AddTask(ctx, fileTask)
-		}
-		return nil
-	})
-	if !options.DryRun {
-		fileMgr.Wait()
-	}
-	return err
-}
-
-func (pb *PBucket) syncPrefixToFolder(ctx context.Context, prefix, folder string) error {
-	options := GetOptions(ctx)
-	fileMgr := NewFileManager(pb, pb.fileThreadNumber)
-	var err error
-	var continuationToken *string
-	for {
-		input := &s3.ListObjectsV2Input{
-			Bucket:            aws.String(pb.GetStsInfo().BucketName),
-			Prefix:            aws.String(prefix),
-			ContinuationToken: continuationToken, // 设置分页令牌
-		}
-
-		result, err := pb.GetS3Client().ListObjectsV2(context.TODO(), input)
-		if err != nil {
-			log.WithError(err).WithField("prefix", prefix).Errorln("failed to list object")
-			break
-		}
-
-		for _, object := range result.Contents {
-			relKey, _ := filepath.Rel(prefix, *object.Key)
-			localFile := utils.MergePath(folder, relKey)
-			utils.EnsureParentDir(localFile)
-			blockCount := (*object.Size + pb.blockSize - 1) / pb.blockSize
-			fileTask := &FileTask{
-				s3Client:   pb.GetS3Client(),
-				stsInfo:    pb.GetStsInfo(),
-				Bucket:     pb.bucket,
-				Type:       FILE_TYPE_GET,
-				LocalPath:  localFile,
-				RemoteKey:  *object.Key,
-				Size:       *object.Size,
-				BlockSize:  pb.blockSize,
-				BlockCount: blockCount,
-			}
-			if options.DryRun {
-				log.Printf("will get %s from %s%s", localFile, pb.bucket, *object.Key)
-			} else {
-				fileMgr.AddTask(ctx, fileTask)
-			}
-		}
-
-		if *result.IsTruncated && result.NextContinuationToken != nil {
-			continuationToken = result.NextContinuationToken
-		} else {
-			break // exit loop
-		}
-	}
-	if !options.DryRun {
-		fileMgr.Wait()
-	}
 	return err
 }
