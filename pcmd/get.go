@@ -57,13 +57,13 @@ func handleGet(config *Config, args []string) error {
 	}
 
 	ctx := context.Background()
-	pb, err := bucket.NewPBucket(&ctx, config.Endpoint, objectInfo.Bucket, config.AK, config.SK,
-		bucket.WithPermissions("GetObject"))
+	pb, err := bucket.NewPBucket(ctx, config.Endpoint, objectInfo.Bucket, config.AK, config.SK,
+		[]string{"GetObject"})
 	if err != nil {
 		fmt.Printf("failed to new PBucket with err:%v\n", err)
 	}
 
-	err = pb.Get(&ctx, objectInfo.Key, localFile)
+	err = pb.Get(ctx, objectInfo.Key, localFile)
 	if err != nil {
 		fmt.Printf("failed to get %s to local file %s with err:%v\n", s3Key, localFile, err)
 	}

@@ -34,6 +34,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Getter
 @Setter
@@ -55,6 +56,14 @@ public class MetaTable {
     public MetaTable(Class type, MetaLoader loader) {
         this.type = type;
         this.loader = loader;
+    }
+
+    public <T>List<T> getItems(Class<T> targetClass) {
+        List<T> subList = new ArrayList<>();
+        return items.stream()
+                .filter(targetClass::isInstance)
+                .map(targetClass::cast)
+                .collect(Collectors.toList());
     }
 
     public boolean isEmpty() {

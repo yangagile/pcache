@@ -59,13 +59,13 @@ func handlePut(config *Config, args []string) error {
 	}
 
 	ctx := context.Background()
-	pb, err := bucket.NewPBucket(&ctx, config.Endpoint, objectInfo.Bucket, config.AK, config.SK,
-		bucket.WithPermissions("PutObject"))
+	pb, err := bucket.NewPBucket(ctx, config.Endpoint, objectInfo.Bucket, config.AK, config.SK,
+		[]string{"PutObject"})
 	if err != nil {
 		fmt.Printf("failed to new PBucket with err:%v\n", err)
 	}
 
-	err = pb.Put(&ctx, localFile, objectInfo.Key)
+	err = pb.Put(ctx, localFile, objectInfo.Key)
 	if err != nil {
 		fmt.Printf("failed to put local file %s to %s with err:%v\n", localFile, s3Key, err)
 	}

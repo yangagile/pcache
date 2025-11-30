@@ -44,12 +44,25 @@ This document describes the usage steps without enabling interface authenticatio
 6. Create a PBucket. The name is test-minio. The routing policy policyRouting is in JSON format, of type OneRouter (corresponding to one vendor bucket). bucketIds is the id returned when adding the vendor bucket in the previous step. This id binds the relationship between the PBucket and the vendor Bucket.
    ```
    curl -X POST "http://127.0.0.1:8080/api/v1/pb/add" -H "accept: application/json;charset=UTF-8" -H "Content-Type: application/json" -d "{ \"description\": \"test local minio\", \"name\": \"test-minio\", \"policyPermission\": \"private\", \"policyRouting\": \"{\\\"router\\\":{\\\"type\\\":\\\"OneRouter\\\"},\\\"bucketIds\\\":[1]}\"}"
-
-7. Run the test program to upload/download files using the newly created PBucket.
+   ```
+7. Run the 'pcmd' command line tools，using the newly created PBucket to put/get/sync files。[pcmd usage](https://github.com/yangagile/pcache/pcmd/README.md)
+   ```
+    // put one local file to pbucket 'test-minio' with key "test/pcom/awscliv2.zip"
+    ./pcmd put /tmp/awscliv2.zip s3://test-minio/test/pcom/awscliv2.zip
+    
+    // get one local file form pbucket 'test-minio' wich key 'test/pcom/awscliv2.zip'
+    ./pcmd get /tmp/awscliv2.zip s3://test-minio/test/pcom/awscliv2.zip
+    
+    // sync local folder to pbucket 'test-minio' prefix 'test/pcom/sync/meta'
+    ./pcmd sync /tmp/meta s3://test-minio/test/pcom/sync/meta
+    
+    // sync back
+    ./pcmd sync s3://test-minio/test/pcom/sync/meta /tmp/meta1
+    
+    // From running log, The FileStats represents file information, while BlockStats refers to block information.
+    // It displays whether the block was uploaded or downloaded from PCP or locally, and whether it was a cache hit.
+    FileStats: Count(total:2 ok:2 fail:0) Size(total:20971520 avg:10485760 max:10485760 min:10485760)bytes Time(avg:84 max:
+    84 min:84)ms
+    BlockStats: Count(total:4 ok_pcp_cache:0 ok_pcp_local:4 ok_local:0 ok_local_pcp_fail:0 fail:0) Time(avg:72 max:75 min:
+    69)ms
    ```  
-   // Modify run.sh to use the AK/SK created in step 4
-   ./run.sh --ops put --bucket test-minio --local_file ~/tmp/200G.file --file_key tmp/200G.file
-   ./run.sh --ops get --bucket test-minio --local_file ~/tmp/200G_GET.file --file_key tmp/200G.file
-
-   // The log will print statistics for upload and download operations. PCP:41(cache:41) indicates that 41 blocks were downloaded from PCP nodes, with 41 cache hits.
-   10:05:55.551 [main] INFO  com.cloud.pc.PBucket - successfully get file from test-minio/tmp/200G.file to /tmp/200G_GET.file stats: total 41 blocks, fail:0 PCP:41(cache:41) local:0 duration time:1087 ms rate:185MB/S

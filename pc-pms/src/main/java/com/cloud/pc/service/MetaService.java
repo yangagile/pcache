@@ -157,10 +157,7 @@ public class MetaService {
     public VendorBucket getVendorBucket(Integer id) {
         return (VendorBucket)vendorBucketTable.get(id.toString());
     }
-    public List<VendorBucket> getAllVendorBucket() {
-        //return new ArrayList<>(vendorBucketTable.getItems());
-        return null;
-    }
+
     public PcMeta addVendor(Vendor vendor) throws Exception{
         return vendorTable.add(vendor);
 
@@ -174,8 +171,7 @@ public class MetaService {
     }
 
     public List<VendorBucket> listVendorBucket() throws Exception{
-        //return vendorBucketTable.getItems();
-        return null;
+        return vendorBucketTable.getItems(VendorBucket.class);
     }
 
     /* Secret */

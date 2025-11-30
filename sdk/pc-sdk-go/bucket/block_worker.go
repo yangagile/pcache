@@ -354,8 +354,6 @@ func (w *BlockWorker) getFromLocal(block *Block) error {
 		log.WithError(err).WithField("local file", localFile).Errorln("failed to write local file")
 		return err
 	}
-	log.WithField("key", block.File.RemoteKey).WithField("localFile", localFile).
-		WithField("size", block.File.Size).Infoln("successfully get file from s3")
 	return nil
 }
 

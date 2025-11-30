@@ -90,8 +90,8 @@ type FileStats struct {
 func NewFileStats() *FileStats {
 	return &FileStats{
 		0, 0, 0,
-		0, math.MaxInt64, 0,
-		0, math.MaxInt64, 0}
+		0, 0, math.MaxInt64,
+		0, 0, math.MaxInt64}
 }
 
 func (s *FileStats) Update(f *FileTask) {

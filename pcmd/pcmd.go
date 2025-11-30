@@ -95,6 +95,7 @@ func main() {
 func registerCommands() {
 	commands["put"] = CreatePutCommand(globalConfig)
 	commands["get"] = CreateGetCommand(globalConfig)
+	commands["sync"] = CreateSyncCommand(globalConfig)
 }
 
 // showHelp displays the main help information

@@ -36,7 +36,7 @@ if [ $# -eq 0 ]; then
     run_in_path "pc-pms" "mvn clean package -Dtar -DskipTests"
     run_in_path "pc-pcp" "mvn clean package -Pdist assembly:single -DskipTests -Dtar"
     run_in_path "sdk/pc-sdk-java" "mvn clean install -DskipTests"
-    run_in_path "pc-test" "mvn clean package -Pdist assembly:single -DskipTests -Dtar"
+    run_in_path "pcmd" "go build"
 
 else
     # Handle different command line arguments
@@ -46,7 +46,7 @@ else
         run_in_path "pc-pms" "mvn clean"
         run_in_path "pc-pcp" "mvn clean"
         run_in_path "sdk/pc-sdk-java" "mvn clean"
-        run_in_path "pc-test" "mvn clean"
+        run_in_path "pcmd" "rm pcmd"
 
     elif [ "$1" == "help" ]; then
         show_help
@@ -58,8 +58,8 @@ else
         run_in_path "pc-pcp" "mvn clean package -Pdist assembly:single -DskipTests -Dtar"
     elif [ "$1" == "pc-sdk-java" ]; then
         run_in_path "sdk/pc-sdk-java" "mvn clean install -DskipTests"
-    elif [ "$1" == "pc-test" ]; then
-        run_in_path "pc-test" "mvn clean package -Pdist assembly:single -DskipTests -Dtar"
+    elif [ "$1" == "pcmd" ]; then
+        run_in_path "pcmd" "go build"
     else
         echo "invalid input $1!"
     fi

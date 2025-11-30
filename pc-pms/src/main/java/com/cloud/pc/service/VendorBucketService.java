@@ -32,10 +32,6 @@ public class VendorBucketService {
         return metaService.getVendorBucket(id);
     }
 
-    public List<VendorBucket> getAllPB() {
-        return metaService.getAllVendorBucket();
-    }
-
     public String processItem(VendorBucket item) {
         return item.getId().toString();
     }

@@ -45,10 +45,21 @@
    curl -X POST "http://127.0.0.1:8080/api/v1/pb/add" -H "accept: application/json;charset=UTF-8" -H "Content-Type: application/json" -d "{ \"description\": \"test local minio\", \"name\": \"test-minio\", \"policyPermission\": \"private\", \"policyRouting\": \"{\\\"router\\\":{\\\"type\\\":\\\"OneRouter\\\"},\\\"bucketIds\\\":[1]}\"}"
   
    
-7. 运行测试程序，使用新创建的 PBucket 上传/下载文件。
+7. 配置运行命令行工具（pcmd），使用新创建的 PBucket 上传/下载文件。[pcmd 使用方式](https://github.com/yangagile/pcache/pcmd/README.md)
 	```
-    pc-test/run.sh --ops put --bucket test-minio --local_file ~/tmp/200G.file --file_key tmp/200G.file
-    pc-test/run.sh --ops get --bucket test-minio --local_file ~/tmp/200G_GET.file --file_key tmp/200G.file
+   // put one local file to pbucket 'test-minio' with key "test/pcom/awscliv2.zip"
+   ./pcmd put /tmp/awscliv2.zip s3://test-minio/test/pcom/awscliv2.zip
+   
+   // get one local file form pbucket 'test-minio' wich key 'test/pcom/awscliv2.zip'
+   ./pcmd get /tmp/awscliv2.zip s3://test-minio/test/pcom/awscliv2.zip
+   
+   // sync local folder to pbucket 'test-minio' prefix 'test/pcom/sync/meta'
+   ./pcmd sync /tmp/meta s3://test-minio/test/pcom/sync/meta
+   
+   // sync back
+   ./pcmd sync s3://test-minio/test/pcom/sync/meta /tmp/meta1
 
-    // log里会打印上传下载的统计信息。PCP:41(cache:41) 表示 从PCP 节点下载41个快，缓存命中 41
-   	10:05:55.551 [main] INFO  com.cloud.pc.PBucket - successfully get file from test-minio/tmp/200G.file to /tmp/200G_GET.file stats: total 41 blocks, fail:0 PCP:41(cache:41) local:0 duration time:1087 ms rate:185MB/S
+    // 运行LOG介绍，FileStats 是文件信息；BlockStats 是块信息，显示块是从PCP或本地上传下载，是否命中缓存。
+    FileStats: Count(total:2 ok:2 fail:0) Size(total:20971520 avg:10485760 max:10485760 min:10485760)bytes Time(avg:84 max:84 min:84)ms 
+    BlockStats: Count(total:4 ok_pcp_cache:0 ok_pcp_local:4 ok_local:0 ok_local_pcp_fail:0 fail:0) Time(avg:72 max:75 min:69)ms
+    ```  

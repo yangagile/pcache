@@ -29,6 +29,8 @@ type Config struct {
 	AK           string
 	SK           string
 	ForceReplace bool
+	DryRun       bool
+	Debug        bool
 }
 
 func NewConfig() *Config {
@@ -37,6 +39,8 @@ func NewConfig() *Config {
 		AK:           "",
 		SK:           "",
 		ForceReplace: true,
+		DryRun:       false,
+		Debug:        false,
 	}
 	cfg.loadConfig()
 	return &cfg

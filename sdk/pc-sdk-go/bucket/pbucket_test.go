@@ -199,6 +199,7 @@ func Test_syncFolder(t *testing.T) {
 	if GetOptions(ctx).FileStats.CountSuccess != 2 {
 		t.Fatalf("failed to sync folder:%v to prefix:%v", folder, prefix)
 	}
+	fmt.Printf("FileStats: %s BlockStats: %s\n", GetOptions(ctx).FileStats, GetOptions(ctx).BlockStats)
 
 	// clean source
 	err = utils.CleanDirFromTempDir(testRootLocal)
