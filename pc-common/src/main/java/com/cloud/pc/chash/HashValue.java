@@ -16,16 +16,9 @@
 
 package com.cloud.pc.chash;
 
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
-
-@Getter
-@Setter
-@ToString
 public class HashValue {
-    String host;
-    float priority;
+    private String host;
+    private float priority;
     public String key() {
         return host;
     }
@@ -41,6 +34,22 @@ public class HashValue {
 
     public HashValue(String host, float priority) {
         this.host = host;
+        this.priority = priority;
+    }
+
+    public String getHost() {
+        return host;
+    }
+
+    public void setHost(String host) {
+        this.host = host;
+    }
+
+    public float getPriority() {
+        return priority;
+    }
+
+    public void setPriority(float priority) {
         this.priority = priority;
     }
 }

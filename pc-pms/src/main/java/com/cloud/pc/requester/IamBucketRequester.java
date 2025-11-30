@@ -19,15 +19,9 @@ package com.cloud.pc.requester;
 import com.cloud.pc.model.PcPermission;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 
 import java.util.List;
 
-@Setter
-@Getter
-@ToString
 @ApiModel(description = "New Secret")
 public class IamBucketRequester {
     @ApiModelProperty(value = "AK(generate automatically if empty)", example = "", required = true)
@@ -41,4 +35,36 @@ public class IamBucketRequester {
 
     @ApiModelProperty(value = "permissions")
     List<PcPermission> permissions;
+
+    public String getAccessKey() {
+        return accessKey;
+    }
+
+    public void setAccessKey(String accessKey) {
+        this.accessKey = accessKey;
+    }
+
+    public String getEffect() {
+        return effect;
+    }
+
+    public void setEffect(String effect) {
+        this.effect = effect;
+    }
+
+    public String getBucket() {
+        return bucket;
+    }
+
+    public void setBucket(String bucket) {
+        this.bucket = bucket;
+    }
+
+    public List<PcPermission> getPermissions() {
+        return permissions;
+    }
+
+    public void setPermissions(List<PcPermission> permissions) {
+        this.permissions = permissions;
+    }
 }

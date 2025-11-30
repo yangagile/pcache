@@ -19,13 +19,7 @@ package com.cloud.pc.requester;
 import com.cloud.pc.meta.PBucket;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 
-@Setter
-@Getter
-@ToString
 @ApiModel(description = "PBucket Information")
 public class PBucketRequester {
     @ApiModelProperty(value = "bucket name", required = true)
@@ -72,5 +66,85 @@ public class PBucketRequester {
         pb.setPolicyRouting(policyRouting);
         pb.setDescription(description);
         return pb;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getPrefix() {
+        return prefix;
+    }
+
+    public void setPrefix(String prefix) {
+        this.prefix = prefix;
+    }
+
+    public Integer getFeatureFlags() {
+        return featureFlags;
+    }
+
+    public void setFeatureFlags(Integer featureFlags) {
+        this.featureFlags = featureFlags;
+    }
+
+    public Long getQuotaCapacity() {
+        return quotaCapacity;
+    }
+
+    public void setQuotaCapacity(Long quotaCapacity) {
+        this.quotaCapacity = quotaCapacity;
+    }
+
+    public Integer getQuotaQps() {
+        return quotaQps;
+    }
+
+    public void setQuotaQps(Integer quotaQps) {
+        this.quotaQps = quotaQps;
+    }
+
+    public Integer getQuotaBandwidth() {
+        return quotaBandwidth;
+    }
+
+    public void setQuotaBandwidth(Integer quotaBandwidth) {
+        this.quotaBandwidth = quotaBandwidth;
+    }
+
+    public String getPolicyTtl() {
+        return policyTtl;
+    }
+
+    public void setPolicyTtl(String policyTtl) {
+        this.policyTtl = policyTtl;
+    }
+
+    public String getPolicyPermission() {
+        return policyPermission;
+    }
+
+    public void setPolicyPermission(String policyPermission) {
+        this.policyPermission = policyPermission;
+    }
+
+    public String getPolicyRouting() {
+        return policyRouting;
+    }
+
+    public void setPolicyRouting(String policyRouting) {
+        this.policyRouting = policyRouting;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 }

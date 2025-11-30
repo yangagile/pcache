@@ -16,15 +16,9 @@
 
 package com.cloud.pc.meta;
 
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 import org.codehaus.jackson.annotate.JsonIgnore;
-
 import java.util.Date;
-@Getter
-@Setter
-@ToString
+
 public class Vendor implements PcMeta {
     private static final String RANDOM_SALT = "2%YkW!@g52Gc19Ua";
     private Integer id;
@@ -59,5 +53,111 @@ public class Vendor implements PcMeta {
     @JsonIgnore
     public int update(PcMeta other) {
         return 1;
+    }
+
+    @Override
+    public Integer getId() {
+        return id;
+    }
+
+    @Override
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getAccessKey() {
+        return accessKey;
+    }
+
+    public void setAccessKey(String accessKey) {
+        this.accessKey = accessKey;
+    }
+
+    public String getAccessSecret() {
+        return accessSecret;
+    }
+
+    public void setAccessSecret(String accessSecret) {
+        this.accessSecret = accessSecret;
+    }
+
+    public String getS3Endpoint() {
+        return s3Endpoint;
+    }
+
+    public void setS3Endpoint(String s3Endpoint) {
+        this.s3Endpoint = s3Endpoint;
+    }
+
+    public String getEndpoint() {
+        return endpoint;
+    }
+
+    public void setEndpoint(String endpoint) {
+        this.endpoint = endpoint;
+    }
+
+    public String getInternalEndpoint() {
+        return internalEndpoint;
+    }
+
+    public void setInternalEndpoint(String internalEndpoint) {
+        this.internalEndpoint = internalEndpoint;
+    }
+
+    public String getStsEndpoint() {
+        return stsEndpoint;
+    }
+
+    public void setStsEndpoint(String stsEndpoint) {
+        this.stsEndpoint = stsEndpoint;
+    }
+
+    public String getCdnEndpoint() {
+        return cdnEndpoint;
+    }
+
+    public void setCdnEndpoint(String cdnEndpoint) {
+        this.cdnEndpoint = cdnEndpoint;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    public Date getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(Date updateTime) {
+        this.updateTime = updateTime;
     }
 }

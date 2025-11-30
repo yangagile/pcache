@@ -16,13 +16,16 @@
 
 package com.cloud.pc.model;
 
-import lombok.Getter;
-import lombok.Setter;
-
 import java.util.List;
 
-@Getter
-@Setter
 public class PmsPulseInfo {
     List<PmsInfo> pmsList;
+
+    public List<PmsInfo> getPmsList() {
+        return pmsList;
+    }
+
+    public void setPmsList(List<PmsInfo> pmsList) {
+        this.pmsList = pmsList;
+    }
 }

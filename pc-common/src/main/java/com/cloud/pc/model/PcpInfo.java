@@ -17,15 +17,9 @@
 package com.cloud.pc.model;
 
 import com.cloud.pc.chash.HashValue;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 
 import java.util.Date;
 
-@Getter
-@Setter
-@ToString
 public class PcpInfo extends HashValue {
     Integer id;
     Long totalSize;
@@ -50,5 +44,61 @@ public class PcpInfo extends HashValue {
         this.usedSize = pulseInfo.getUsedSize();
         this.adjust = pulseInfo.getAdjust();
         this.updateTime = new Date();
+    }
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public Long getTotalSize() {
+        return totalSize;
+    }
+
+    public void setTotalSize(Long totalSize) {
+        this.totalSize = totalSize;
+    }
+
+    public Long getUsedSize() {
+        return usedSize;
+    }
+
+    public void setUsedSize(Long usedSize) {
+        this.usedSize = usedSize;
+    }
+
+    public Long getFileCount() {
+        return fileCount;
+    }
+
+    public void setFileCount(Long fileCount) {
+        this.fileCount = fileCount;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    public Date getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(Date updateTime) {
+        this.updateTime = updateTime;
+    }
+
+    public Float getAdjust() {
+        return adjust;
+    }
+
+    public void setAdjust(Float adjust) {
+        this.adjust = adjust;
     }
 }

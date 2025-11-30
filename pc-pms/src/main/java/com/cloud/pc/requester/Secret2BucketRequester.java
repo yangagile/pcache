@@ -19,15 +19,8 @@ package com.cloud.pc.requester;
 import com.cloud.pc.model.PcPermission;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
-
 import java.util.List;
 
-@Setter
-@Getter
-@ToString
 @ApiModel(description = "New Secret")
 public class Secret2BucketRequester {
     @ApiModelProperty(value = "AK(generate automatically if empty)", example = "", required = true)
@@ -50,4 +43,60 @@ public class Secret2BucketRequester {
 
     @ApiModelProperty(value = "permissions", required = true)
     List<PcPermission> permissions;
+
+    public String getAccessKey() {
+        return accessKey;
+    }
+
+    public void setAccessKey(String accessKey) {
+        this.accessKey = accessKey;
+    }
+
+    public String getMail() {
+        return mail;
+    }
+
+    public void setMail(String mail) {
+        this.mail = mail;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getBucket() {
+        return bucket;
+    }
+
+    public void setBucket(String bucket) {
+        this.bucket = bucket;
+    }
+
+    public String getAction() {
+        return action;
+    }
+
+    public void setAction(String action) {
+        this.action = action;
+    }
+
+    public List<PcPermission> getPermissions() {
+        return permissions;
+    }
+
+    public void setPermissions(List<PcPermission> permissions) {
+        this.permissions = permissions;
+    }
 }

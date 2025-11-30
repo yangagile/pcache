@@ -17,15 +17,11 @@
 package com.cloud.pc.iam;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Getter;
-import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-@Getter
-@Setter
 public class IamPolicy {
     @JsonProperty("Version")
     private String version = "2025-08-05";
@@ -53,6 +49,22 @@ public class IamPolicy {
             this.statements = new ArrayList<>();
         }
         this.statements.add(statement);
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    public void setVersion(String version) {
+        this.version = version;
+    }
+
+    public List<Statement> getStatements() {
+        return statements;
+    }
+
+    public void setStatements(List<Statement> statements) {
+        this.statements = statements;
     }
 }
 

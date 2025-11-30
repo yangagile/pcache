@@ -16,13 +16,8 @@
 
 package com.cloud.pc.model;
 
-import lombok.Getter;
-import lombok.Setter;
-
 import java.util.Date;
 
-@Getter
-@Setter
 public class PmsInfo {
     private String  host;
     private Long    metaVersion;
@@ -54,5 +49,37 @@ public class PmsInfo {
             this.leader = other.leader;
             this.updateTime = other.updateTime;
         }
+    }
+
+    public String getHost() {
+        return host;
+    }
+
+    public void setHost(String host) {
+        this.host = host;
+    }
+
+    public Long getMetaVersion() {
+        return metaVersion;
+    }
+
+    public void setMetaVersion(Long metaVersion) {
+        this.metaVersion = metaVersion;
+    }
+
+    public Boolean getLeader() {
+        return leader;
+    }
+
+    public void setLeader(Boolean leader) {
+        this.leader = leader;
+    }
+
+    public Date getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(Date updateTime) {
+        this.updateTime = updateTime;
     }
 }

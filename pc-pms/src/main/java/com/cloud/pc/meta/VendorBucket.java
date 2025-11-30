@@ -16,17 +16,9 @@
 
 package com.cloud.pc.meta;
 
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 import org.codehaus.jackson.annotate.JsonIgnore;
-
 import java.util.Date;
-import java.util.Objects;
 
-@Getter
-@Setter
-@ToString
 public class VendorBucket implements PcMeta {
     private Integer id;
     private String name;
@@ -59,5 +51,111 @@ public class VendorBucket implements PcMeta {
     @JsonIgnore
     public int update(PcMeta other) {
         return 1;
+    }
+
+    @Override
+    public Integer getId() {
+        return id;
+    }
+
+    @Override
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getVendor() {
+        return vendor;
+    }
+
+    public void setVendor(String vendor) {
+        this.vendor = vendor;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
+    }
+
+    public String getPermission() {
+        return permission;
+    }
+
+    public void setPermission(String permission) {
+        this.permission = permission;
+    }
+
+    public String getEndpoint() {
+        return endpoint;
+    }
+
+    public void setEndpoint(String endpoint) {
+        this.endpoint = endpoint;
+    }
+
+    public String getCdnEndpoint() {
+        return cdnEndpoint;
+    }
+
+    public void setCdnEndpoint(String cdnEndpoint) {
+        this.cdnEndpoint = cdnEndpoint;
+    }
+
+    public Long getQuotaCapacity() {
+        return quotaCapacity;
+    }
+
+    public void setQuotaCapacity(Long quotaCapacity) {
+        this.quotaCapacity = quotaCapacity;
+    }
+
+    public Integer getQuotaQps() {
+        return quotaQps;
+    }
+
+    public void setQuotaQps(Integer quotaQps) {
+        this.quotaQps = quotaQps;
+    }
+
+    public Integer getQuotaBandwidth() {
+        return quotaBandwidth;
+    }
+
+    public void setQuotaBandwidth(Integer quotaBandwidth) {
+        this.quotaBandwidth = quotaBandwidth;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    public Date getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(Date updateTime) {
+        this.updateTime = updateTime;
+    }
+
+    public Date getAccessTime() {
+        return accessTime;
+    }
+
+    public void setAccessTime(Date accessTime) {
+        this.accessTime = accessTime;
     }
 }

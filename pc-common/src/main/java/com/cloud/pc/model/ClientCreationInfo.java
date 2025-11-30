@@ -16,13 +16,6 @@
 
 package com.cloud.pc.model;
 
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
-
-@Getter
-@Setter
-@ToString
 public class ClientCreationInfo {
     private String vendor;
     private String region;
@@ -37,6 +30,46 @@ public class ClientCreationInfo {
         this.region = region;
         this.endpoint = endpoint;
         this.accessKey = accessKey;
+        this.accessSecret = accessSecret;
+    }
+
+    public String getVendor() {
+        return vendor;
+    }
+
+    public void setVendor(String vendor) {
+        this.vendor = vendor;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
+    }
+
+    public String getEndpoint() {
+        return endpoint;
+    }
+
+    public void setEndpoint(String endpoint) {
+        this.endpoint = endpoint;
+    }
+
+    public String getAccessKey() {
+        return accessKey;
+    }
+
+    public void setAccessKey(String accessKey) {
+        this.accessKey = accessKey;
+    }
+
+    public String getAccessSecret() {
+        return accessSecret;
+    }
+
+    public void setAccessSecret(String accessSecret) {
         this.accessSecret = accessSecret;
     }
 }

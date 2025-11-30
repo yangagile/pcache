@@ -18,17 +18,11 @@ package com.cloud.pc.model.routing;
 
 import com.cloud.pc.model.StsInfo;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.util.ArrayList;
 import java.util.List;
 
-@Getter
-@Setter
-@ToString
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class RoutingResult {
     private RoutingType router;
@@ -40,5 +34,21 @@ public class RoutingResult {
             return stsInfos.get(0);
         }
         return null;
+    }
+
+    public void setRouter(RoutingType router) {
+        this.router = router;
+    }
+
+    public RoutingType getRouter() {
+        return router;
+    }
+
+    public List<StsInfo> getStsInfos() {
+        return stsInfos;
+    }
+
+    public void setStsInfos(List<StsInfo> stsInfos) {
+        this.stsInfos = stsInfos;
     }
 }

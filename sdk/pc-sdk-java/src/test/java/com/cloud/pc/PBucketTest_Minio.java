@@ -22,7 +22,6 @@ import com.cloud.pc.utils.TestFileUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.junit.AfterClass;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;

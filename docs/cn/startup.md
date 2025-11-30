@@ -45,7 +45,7 @@
    curl -X POST "http://127.0.0.1:8080/api/v1/pb/add" -H "accept: application/json;charset=UTF-8" -H "Content-Type: application/json" -d "{ \"description\": \"test local minio\", \"name\": \"test-minio\", \"policyPermission\": \"private\", \"policyRouting\": \"{\\\"router\\\":{\\\"type\\\":\\\"OneRouter\\\"},\\\"bucketIds\\\":[1]}\"}"
   
    
-7. 配置运行命令行工具（pcmd），使用新创建的 PBucket 上传/下载文件。[pcmd 使用方式](https://github.com/yangagile/pcache/pcmd/README.md)
+7. 配置运行命令行工具（pcmd），使用新创建的 PBucket 上传/下载文件。[pcmd 使用方式](../../pcmd/README.md)
 	```
    // put one local file to pbucket 'test-minio' with key "test/pcom/awscliv2.zip"
    ./pcmd put /tmp/awscliv2.zip s3://test-minio/test/pcom/awscliv2.zip

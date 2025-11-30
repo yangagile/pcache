@@ -16,19 +16,52 @@
 
 package com.cloud.pc.model;
 
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
-
 import java.util.List;
 
-@Getter
-@Setter
-@ToString
 public class ApplyStsToken {
     private String name;
     private String path;
     private String region;
     private List<PcPermission> permissions;
     private int expirationTimeInSeconds;
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getPath() {
+        return path;
+    }
+
+    public void setPath(String path) {
+        this.path = path;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
+    }
+
+    public List<PcPermission> getPermissions() {
+        return permissions;
+    }
+
+    public void setPermissions(List<PcPermission> permissions) {
+        this.permissions = permissions;
+    }
+
+    public int getExpirationTimeInSeconds() {
+        return expirationTimeInSeconds;
+    }
+
+    public void setExpirationTimeInSeconds(int expirationTimeInSeconds) {
+        this.expirationTimeInSeconds = expirationTimeInSeconds;
+    }
 }

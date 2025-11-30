@@ -16,13 +16,6 @@
 
 package com.cloud.pc.scanner;
 
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
-
-@Getter
-@Setter
-@ToString
 public class FileStat {
     long size = 0;
     long count = 0;
@@ -39,6 +32,22 @@ public class FileStat {
 
     public void addCount(long count) {
         this.count += count;
+    }
+
+    public long getSize() {
+        return size;
+    }
+
+    public void setSize(long size) {
+        this.size = size;
+    }
+
+    public long getCount() {
+        return count;
+    }
+
+    public void setCount(long count) {
+        this.count = count;
     }
 }
 

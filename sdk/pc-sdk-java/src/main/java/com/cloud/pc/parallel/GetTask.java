@@ -21,9 +21,6 @@ import com.cloud.pc.entity.Stats;
 import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.JsonUtils;
 import com.cloud.pc.utils.S3Utils;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -43,9 +40,6 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
-@Getter
-@Setter
-@ToString
 public class GetTask implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(GetTask.class);
     private final CountDownLatch latch;
@@ -71,6 +65,15 @@ public class GetTask implements Runnable {
         this.blockSize = blockSize;
         this.stats = new Stats();
     }
+
+    public Stats getStats() {
+        return stats;
+    }
+
+    public String getETag() {
+        return eTag;
+    }
+
 
     @Override
     public void run() {

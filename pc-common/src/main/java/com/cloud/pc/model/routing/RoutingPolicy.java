@@ -17,16 +17,10 @@
 package com.cloud.pc.model.routing;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 
 import java.util.ArrayList;
 import java.util.List;
 
-@Getter
-@Setter
-@ToString
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class RoutingPolicy {
     private RoutingType router;
@@ -41,5 +35,21 @@ public class RoutingPolicy {
 
     public int route(String factor) {
         return router.route(bucketIds, factor);
+    }
+
+    public RoutingType getRouter() {
+        return router;
+    }
+
+    public void setRouter(RoutingType router) {
+        this.router = router;
+    }
+
+    public List<Integer> getBucketIds() {
+        return bucketIds;
+    }
+
+    public void setBucketIds(List<Integer> bucketIds) {
+        this.bucketIds = bucketIds;
     }
 }

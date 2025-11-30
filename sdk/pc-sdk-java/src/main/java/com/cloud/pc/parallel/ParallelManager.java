@@ -17,13 +17,9 @@
 package com.cloud.pc.parallel;
 
 import io.netty.util.concurrent.DefaultThreadFactory;
-import lombok.Getter;
-import lombok.Setter;
 
 import java.util.concurrent.*;
 
-@Getter
-@Setter
 public class ParallelManager {
     private ExecutorService exeService;
 

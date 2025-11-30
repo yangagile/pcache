@@ -17,14 +17,7 @@
 package com.cloud.pc.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.google.common.util.concurrent.RateLimiter;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 
-@Getter
-@Setter
-@ToString
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class BucketInfo {
     private String name;
@@ -36,6 +29,46 @@ public class BucketInfo {
     private int quotaQps;
 
     private int quotaConcurrency;
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getPrefix() {
+        return prefix;
+    }
+
+    public void setPrefix(String prefix) {
+        this.prefix = prefix;
+    }
+
+    public int getFeatureFlags() {
+        return featureFlags;
+    }
+
+    public void setFeatureFlags(int featureFlags) {
+        this.featureFlags = featureFlags;
+    }
+
+    public int getQuotaQps() {
+        return quotaQps;
+    }
+
+    public void setQuotaQps(int quotaQps) {
+        this.quotaQps = quotaQps;
+    }
+
+    public int getQuotaConcurrency() {
+        return quotaConcurrency;
+    }
+
+    public void setQuotaConcurrency(int quotaConcurrency) {
+        this.quotaConcurrency = quotaConcurrency;
+    }
 }
 
 

@@ -17,13 +17,6 @@
 package com.cloud.pc.entity;
 
 import com.cloud.pc.utils.FileUtils;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
-
-@Getter
-@Setter
-@ToString
 
 public class Stats {
     int cntFail = 0;
@@ -38,10 +31,10 @@ public class Stats {
     }
 
     public Stats add(Stats other) {
-        cntFail += other.getCntFail();
-        cntPcp += other.getCntPcp();
-        cntLocal += other.getCntLocal();
-        pcpCacheHit += other.getPcpCacheHit();
+        cntFail += other.cntFail;
+        cntPcp += other.cntPcp;
+        cntLocal += other.cntLocal;
+        pcpCacheHit += other.pcpCacheHit;
         return this;
     }
 
@@ -77,5 +70,29 @@ public class Stats {
         return "stats: total " + (cntFail + cntPcp + cntLocal) + " blocks, fail:" + cntFail + " PCP:"
                 + cntPcp + "(cache:" + pcpCacheHit + ") local:" + cntLocal + " duration time:" + time + " ms rate:"
                 + FileUtils.formatDataSize(rate) + "/S" ;
+    }
+
+    public int getCntFail() {
+        return cntFail;
+    }
+
+    public int getCntPcp() {
+        return cntPcp;
+    }
+
+    public int getCntLocal() {
+        return cntLocal;
+    }
+
+    public int getPcpCacheHit() {
+        return pcpCacheHit;
+    }
+
+    public long getTime() {
+        return time;
+    }
+
+    public long getRate() {
+        return rate;
     }
 }

@@ -17,17 +17,11 @@
 package com.cloud.pc.chash;
 
 import com.cloud.pc.utils.ComUtils;
-import lombok.Getter;
-import lombok.Setter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 
-@Getter
-@Setter
 public class PcpHashInfo {
     private String checksum = "";
     private List<HashValue> pcpList;
@@ -46,4 +40,19 @@ public class PcpHashInfo {
         return null;
     }
 
+    public String getChecksum() {
+        return checksum;
+    }
+
+    public void setChecksum(String checksum) {
+        this.checksum = checksum;
+    }
+
+    public List<HashValue> getPcpList() {
+        return pcpList;
+    }
+
+    public void setPcpList(List<HashValue> pcpList) {
+        this.pcpList = pcpList;
+    }
 }

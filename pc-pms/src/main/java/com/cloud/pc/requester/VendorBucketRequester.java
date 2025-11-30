@@ -19,13 +19,7 @@ package com.cloud.pc.requester;
 import com.cloud.pc.meta.VendorBucket;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 
-@Setter
-@Getter
-@ToString
 @ApiModel(description = "VendorBucket信息")
 public class VendorBucketRequester {
     @ApiModelProperty(value = "name of vendor bucket", example = "name", required = true)
@@ -70,5 +64,85 @@ public class VendorBucketRequester {
         vb.setQuotaQps(quotaQps);
         vb.setQuotaBandwidth(quotaBandwidth);
         return vb;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getVendor() {
+        return vendor;
+    }
+
+    public void setVendor(String vendor) {
+        this.vendor = vendor;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
+    }
+
+    public String getPermission() {
+        return permission;
+    }
+
+    public void setPermission(String permission) {
+        this.permission = permission;
+    }
+
+    public String getEndpoint() {
+        return endpoint;
+    }
+
+    public void setEndpoint(String endpoint) {
+        this.endpoint = endpoint;
+    }
+
+    public String getCdnEndpoint() {
+        return cdnEndpoint;
+    }
+
+    public void setCdnEndpoint(String cdnEndpoint) {
+        this.cdnEndpoint = cdnEndpoint;
+    }
+
+    public String getS3Endpoint() {
+        return s3Endpoint;
+    }
+
+    public void setS3Endpoint(String s3Endpoint) {
+        this.s3Endpoint = s3Endpoint;
+    }
+
+    public Long getQuotaCapacity() {
+        return quotaCapacity;
+    }
+
+    public void setQuotaCapacity(Long quotaCapacity) {
+        this.quotaCapacity = quotaCapacity;
+    }
+
+    public Integer getQuotaQps() {
+        return quotaQps;
+    }
+
+    public void setQuotaQps(Integer quotaQps) {
+        this.quotaQps = quotaQps;
+    }
+
+    public Integer getQuotaBandwidth() {
+        return quotaBandwidth;
+    }
+
+    public void setQuotaBandwidth(Integer quotaBandwidth) {
+        this.quotaBandwidth = quotaBandwidth;
     }
 }

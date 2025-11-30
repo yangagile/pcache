@@ -16,11 +16,6 @@
 
 package com.cloud.pc.model;
 
-import lombok.Getter;
-import lombok.Setter;
-
-@Getter
-@Setter
 public class PcpPulseInfo {
     private String host;
     private String info;
@@ -29,4 +24,60 @@ public class PcpPulseInfo {
     Long fileCount;
     Float adjust = 0.0f;
     int level = 1;
+
+    public String getHost() {
+        return host;
+    }
+
+    public void setHost(String host) {
+        this.host = host;
+    }
+
+    public String getInfo() {
+        return info;
+    }
+
+    public void setInfo(String info) {
+        this.info = info;
+    }
+
+    public Long getTotalSize() {
+        return totalSize;
+    }
+
+    public void setTotalSize(Long totalSize) {
+        this.totalSize = totalSize;
+    }
+
+    public Long getUsedSize() {
+        return usedSize;
+    }
+
+    public void setUsedSize(Long usedSize) {
+        this.usedSize = usedSize;
+    }
+
+    public Long getFileCount() {
+        return fileCount;
+    }
+
+    public void setFileCount(Long fileCount) {
+        this.fileCount = fileCount;
+    }
+
+    public Float getAdjust() {
+        return adjust;
+    }
+
+    public void setAdjust(Float adjust) {
+        this.adjust = adjust;
+    }
+
+    public int getLevel() {
+        return level;
+    }
+
+    public void setLevel(int level) {
+        this.level = level;
+    }
 }

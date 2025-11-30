@@ -20,15 +20,10 @@ import com.cloud.pc.meta.Secret;
 import com.cloud.pc.utils.SecretUtils;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 
 import java.util.Date;
 
-@Setter
-@Getter
-@ToString
+
 @ApiModel(description = "New Secret")
 public class NewSecretRequester {
     @ApiModelProperty(value = "AK(generate automatically if empty)", example = "", required = true)
@@ -58,5 +53,45 @@ public class NewSecretRequester {
         secret.setUpdateTime(secret.getCreateTime());
         secret.setAccessTime(secret.getCreateTime());
         return secret;
+    }
+
+    public String getAccessKey() {
+        return accessKey;
+    }
+
+    public void setAccessKey(String accessKey) {
+        this.accessKey = accessKey;
+    }
+
+    public String getIam() {
+        return iam;
+    }
+
+    public void setIam(String iam) {
+        this.iam = iam;
+    }
+
+    public String getMail() {
+        return mail;
+    }
+
+    public void setMail(String mail) {
+        this.mail = mail;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 }

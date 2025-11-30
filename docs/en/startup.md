@@ -45,7 +45,7 @@ This document describes the usage steps without enabling interface authenticatio
    ```
    curl -X POST "http://127.0.0.1:8080/api/v1/pb/add" -H "accept: application/json;charset=UTF-8" -H "Content-Type: application/json" -d "{ \"description\": \"test local minio\", \"name\": \"test-minio\", \"policyPermission\": \"private\", \"policyRouting\": \"{\\\"router\\\":{\\\"type\\\":\\\"OneRouter\\\"},\\\"bucketIds\\\":[1]}\"}"
    ```
-7. Run the 'pcmd' command line tools，using the newly created PBucket to put/get/sync files。[pcmd usage](https://github.com/yangagile/pcache/pcmd/README.md)
+7. Run the 'pcmd' command line tools，using the newly created PBucket to put/get/sync files。[pcmd usage](../../pcmd/README.md)
    ```
     // put one local file to pbucket 'test-minio' with key "test/pcom/awscliv2.zip"
     ./pcmd put /tmp/awscliv2.zip s3://test-minio/test/pcom/awscliv2.zip

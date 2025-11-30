@@ -19,13 +19,7 @@ package com.cloud.pc.requester;
 import com.cloud.pc.meta.Vendor;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 
-@Setter
-@Getter
-@ToString
 @ApiModel(description = "Vendor Information")
 public class VendorRequester {
     @ApiModelProperty(value = "vendor name", example = "name", required = true)
@@ -71,5 +65,85 @@ public class VendorRequester {
         vendor.setStsEndpoint(stsEndpoint);
         vendor.setCdnEndpoint(cdnEndpoint);
         return vendor;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getAccessKey() {
+        return accessKey;
+    }
+
+    public void setAccessKey(String accessKey) {
+        this.accessKey = accessKey;
+    }
+
+    public String getAccessSecret() {
+        return accessSecret;
+    }
+
+    public void setAccessSecret(String accessSecret) {
+        this.accessSecret = accessSecret;
+    }
+
+    public String getS3Endpoint() {
+        return s3Endpoint;
+    }
+
+    public void setS3Endpoint(String s3Endpoint) {
+        this.s3Endpoint = s3Endpoint;
+    }
+
+    public String getEndpoint() {
+        return endpoint;
+    }
+
+    public void setEndpoint(String endpoint) {
+        this.endpoint = endpoint;
+    }
+
+    public String getInternalEndpoint() {
+        return internalEndpoint;
+    }
+
+    public void setInternalEndpoint(String internalEndpoint) {
+        this.internalEndpoint = internalEndpoint;
+    }
+
+    public String getStsEndpoint() {
+        return stsEndpoint;
+    }
+
+    public void setStsEndpoint(String stsEndpoint) {
+        this.stsEndpoint = stsEndpoint;
+    }
+
+    public String getCdnEndpoint() {
+        return cdnEndpoint;
+    }
+
+    public void setCdnEndpoint(String cdnEndpoint) {
+        this.cdnEndpoint = cdnEndpoint;
     }
 }

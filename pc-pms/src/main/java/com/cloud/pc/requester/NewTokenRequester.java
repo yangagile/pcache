@@ -18,15 +18,8 @@ package com.cloud.pc.requester;
 
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
-
 import java.util.Map;
 
-@Setter
-@Getter
-@ToString
 @ApiModel(description = "New Secret")
 public class NewTokenRequester {
     @ApiModelProperty(value = "accessKey", example = "", required = true)
@@ -43,4 +36,44 @@ public class NewTokenRequester {
 
     @ApiModelProperty(value = "description")
     String description;
+
+    public String getAccessKey() {
+        return accessKey;
+    }
+
+    public void setAccessKey(String accessKey) {
+        this.accessKey = accessKey;
+    }
+
+    public String getSecretKey() {
+        return secretKey;
+    }
+
+    public void setSecretKey(String secretKey) {
+        this.secretKey = secretKey;
+    }
+
+    public Long getExpirationMs() {
+        return expirationMs;
+    }
+
+    public void setExpirationMs(Long expirationMs) {
+        this.expirationMs = expirationMs;
+    }
+
+    public Map<String, Object> getClaims() {
+        return claims;
+    }
+
+    public void setClaims(Map<String, Object> claims) {
+        this.claims = claims;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
 }

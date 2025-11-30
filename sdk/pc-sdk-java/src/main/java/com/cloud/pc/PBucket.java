@@ -31,9 +31,6 @@ import com.cloud.pc.utils.FileUtils;
 
 import com.cloud.pc.utils.S3ClientCache;
 import com.cloud.pc.utils.S3Utils;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.exception.SdkClientException;
@@ -48,9 +45,6 @@ import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.*;
 
-@Getter
-@Setter
-@ToString
 public class PBucket {
     private static final Logger LOG = LoggerFactory.getLogger(PBucket.class);
     private ThreadLocal<Tracer> threadTracer = ThreadLocal.withInitial(() -> new Tracer());
@@ -121,6 +115,22 @@ public class PBucket {
 
     private void init() {
         pmsMgr = new PmsMgrImpl(pmsUrl, ak, sk);
+    }
+
+    public void setEnablePCache(boolean enablePCache) {
+        this.enablePCache = enablePCache;
+    }
+
+    public ThreadLocal<Tracer> getThreadTracer() {
+        return threadTracer;
+    }
+
+    public PmsMgr getPmsMgr() {
+        return pmsMgr;
+    }
+
+    public int getBlockSize() {
+        return blockSize;
     }
 
     public BucketInfo getBucketInfo() {

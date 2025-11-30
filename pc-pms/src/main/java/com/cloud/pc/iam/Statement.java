@@ -18,15 +18,11 @@ package com.cloud.pc.iam;
 
 import com.cloud.pc.model.PcPermission;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Getter;
-import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-@Getter
-@Setter
 public class Statement {
     @JsonProperty("Effect")
     private String effect;
@@ -59,5 +55,29 @@ public class Statement {
             this.resource.add("arn:aws:s3:::" + res + "/*");
         }
         return this;
+    }
+
+    public String getEffect() {
+        return effect;
+    }
+
+    public void setEffect(String effect) {
+        this.effect = effect;
+    }
+
+    public List<String> getActions() {
+        return actions;
+    }
+
+    public void setActions(List<String> actions) {
+        this.actions = actions;
+    }
+
+    public List<String> getResource() {
+        return resource;
+    }
+
+    public void setResource(List<String> resource) {
+        this.resource = resource;
     }
 }

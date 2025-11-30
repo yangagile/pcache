@@ -21,9 +21,6 @@ import com.cloud.pc.model.PcPath;
 import com.cloud.pc.model.StsInfo;
 import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.JsonUtils;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,9 +37,6 @@ import java.net.URL;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 
-@Getter
-@Setter
-@ToString
 public class PutTask implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(PutTask.class);
 
@@ -73,6 +67,18 @@ public class PutTask implements Runnable {
         this.blockSize = blockSize;
         this.uploadId = uploadId;
         this.stats = new Stats();
+    }
+
+    public Stats getStats() {
+        return stats;
+    }
+
+    public String getETag() {
+        return eTag;
+    }
+
+    public PcPath getPcPath() {
+        return pcPath;
     }
 
     private void putToPcp(byte[] buffer) throws Exception{

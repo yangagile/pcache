@@ -20,10 +20,6 @@ import com.cloud.pc.utils.ComUtils;
 import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.JsonUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import lombok.Getter;
-import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.IOException;
@@ -36,8 +32,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@Getter
-@Setter
 public class MetaTable {
 
     @JsonIgnore
@@ -164,5 +158,57 @@ public class MetaTable {
         List<PcMeta> its = loader.load(type);
         updateAll(its);
         dump2File(loader.getRootPath());
+    }
+
+    public Class getType() {
+        return type;
+    }
+
+    public MetaLoader getLoader() {
+        return loader;
+    }
+
+    public void setLoader(MetaLoader loader) {
+        this.loader = loader;
+    }
+
+    public Map<String, Integer> getKeyMap() {
+        return keyMap;
+    }
+
+    public void setKeyMap(Map<String, Integer> keyMap) {
+        this.keyMap = keyMap;
+    }
+
+    public boolean isChanged() {
+        return changed;
+    }
+
+    public void setChanged(boolean changed) {
+        this.changed = changed;
+    }
+
+    public List<PcMeta> getItems() {
+        return items;
+    }
+
+    public void setItems(List<PcMeta> items) {
+        this.items = items;
+    }
+
+    public String getChecksum() {
+        return checksum;
+    }
+
+    public void setChecksum(String checksum) {
+        this.checksum = checksum;
+    }
+
+    public long getLastUpdateTime() {
+        return lastUpdateTime;
+    }
+
+    public void setLastUpdateTime(long lastUpdateTime) {
+        this.lastUpdateTime = lastUpdateTime;
     }
 }

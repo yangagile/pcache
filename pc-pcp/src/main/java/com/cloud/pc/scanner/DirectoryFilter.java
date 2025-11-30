@@ -16,8 +16,6 @@
 
 package com.cloud.pc.scanner;
 
-import lombok.Getter;
-import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,8 +23,6 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 
-@Getter
-@Setter
 public class DirectoryFilter extends SimpleFileVisitor<Path> {
     private static final Logger LOG = LoggerFactory.getLogger(DirectoryFilter.class);
 
@@ -125,6 +121,54 @@ public class DirectoryFilter extends SimpleFileVisitor<Path> {
             currentSize.add(statCounter[i]);
         }
         return currentSize;
+    }
+
+    public Long getTimeSpan() {
+        return timeSpan;
+    }
+
+    public void setTimeSpan(Long timeSpan) {
+        this.timeSpan = timeSpan;
+    }
+
+    public Long getTimeNow() {
+        return timeNow;
+    }
+
+    public void setTimeNow(Long timeNow) {
+        this.timeNow = timeNow;
+    }
+
+    public Long getTimeMaxSpan() {
+        return timeMaxSpan;
+    }
+
+    public void setTimeMaxSpan(Long timeMaxSpan) {
+        this.timeMaxSpan = timeMaxSpan;
+    }
+
+    public Long getEmptyDirCount() {
+        return emptyDirCount;
+    }
+
+    public void setEmptyDirCount(Long emptyDirCount) {
+        this.emptyDirCount = emptyDirCount;
+    }
+
+    public Long getErrorCount() {
+        return errorCount;
+    }
+
+    public void setErrorCount(Long errorCount) {
+        this.errorCount = errorCount;
+    }
+
+    public FileStat[] getStatCounter() {
+        return statCounter;
+    }
+
+    public void setStatCounter(FileStat[] statCounter) {
+        this.statCounter = statCounter;
     }
 }
 

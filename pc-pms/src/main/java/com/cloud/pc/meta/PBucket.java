@@ -16,16 +16,9 @@
 
 package com.cloud.pc.meta;
 
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 import org.codehaus.jackson.annotate.JsonIgnore;
-
 import java.util.Date;
 
-@Getter
-@Setter
-@ToString
 public class PBucket implements PcMeta {
     private Integer id;
     private String name;
@@ -59,5 +52,119 @@ public class PBucket implements PcMeta {
     @JsonIgnore
     public int update(PcMeta other) {
         return 1;
+    }
+
+    @Override
+    public Integer getId() {
+        return id;
+    }
+
+    @Override
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getPrefix() {
+        return prefix;
+    }
+
+    public void setPrefix(String prefix) {
+        this.prefix = prefix;
+    }
+
+    public Integer getFeatureFlags() {
+        return featureFlags;
+    }
+
+    public void setFeatureFlags(Integer featureFlags) {
+        this.featureFlags = featureFlags;
+    }
+
+    public Long getQuotaCapacity() {
+        return quotaCapacity;
+    }
+
+    public void setQuotaCapacity(Long quotaCapacity) {
+        this.quotaCapacity = quotaCapacity;
+    }
+
+    public Integer getQuotaBandwidth() {
+        return quotaBandwidth;
+    }
+
+    public void setQuotaBandwidth(Integer quotaBandwidth) {
+        this.quotaBandwidth = quotaBandwidth;
+    }
+
+    public Integer getQuotaQps() {
+        return quotaQps;
+    }
+
+    public void setQuotaQps(Integer quotaQps) {
+        this.quotaQps = quotaQps;
+    }
+
+    public String getPolicyTtl() {
+        return policyTtl;
+    }
+
+    public void setPolicyTtl(String policyTtl) {
+        this.policyTtl = policyTtl;
+    }
+
+    public String getPolicyPermission() {
+        return policyPermission;
+    }
+
+    public void setPolicyPermission(String policyPermission) {
+        this.policyPermission = policyPermission;
+    }
+
+    public String getPolicyRouting() {
+        return policyRouting;
+    }
+
+    public void setPolicyRouting(String policyRouting) {
+        this.policyRouting = policyRouting;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    public Date getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(Date updateTime) {
+        this.updateTime = updateTime;
+    }
+
+    public Date getAccessTime() {
+        return accessTime;
+    }
+
+    public void setAccessTime(Date accessTime) {
+        this.accessTime = accessTime;
     }
 }

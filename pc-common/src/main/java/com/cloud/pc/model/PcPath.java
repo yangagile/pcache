@@ -16,12 +16,8 @@
 
 package com.cloud.pc.model;
 
-import lombok.Getter;
-import lombok.Setter;
 import org.apache.hadoop.fs.Path;
 
-@Getter
-@Setter
 public class PcPath {
     private String bucket;
     private String key;
@@ -59,5 +55,37 @@ public class PcPath {
 
     public boolean isSingleFile() {
         return totalNumber == 1;
+    }
+
+    public String getBucket() {
+        return bucket;
+    }
+
+    public void setBucket(String bucket) {
+        this.bucket = bucket;
+    }
+
+    public String getKey() {
+        return key;
+    }
+
+    public void setKey(String key) {
+        this.key = key;
+    }
+
+    public long getNumber() {
+        return number;
+    }
+
+    public void setNumber(long number) {
+        this.number = number;
+    }
+
+    public long getTotalNumber() {
+        return totalNumber;
+    }
+
+    public void setTotalNumber(long totalNumber) {
+        this.totalNumber = totalNumber;
     }
 }

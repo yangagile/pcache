@@ -19,15 +19,8 @@ package com.cloud.pc.requester;
 import com.cloud.pc.model.PcpInfo;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
-
 import java.util.Date;
 
-@Setter
-@Getter
-@ToString
 @ApiModel(description = "Vendor信息")
 public class PcpAddRequester {
     @ApiModelProperty(value = "访问地址", example = "host", required = true)
@@ -44,5 +37,21 @@ public class PcpAddRequester {
         pcpInfo.setCreateTime(new Date());
         pcpInfo.setUpdateTime(new Date());
         return pcpInfo;
+    }
+
+    public String getHost() {
+        return host;
+    }
+
+    public void setHost(String host) {
+        this.host = host;
+    }
+
+    public Long getTotalSize() {
+        return totalSize;
+    }
+
+    public void setTotalSize(Long totalSize) {
+        this.totalSize = totalSize;
     }
 }
