@@ -73,7 +73,7 @@ public class FileServerHandler extends SimpleChannelInboundHandler<FullHttpReque
             userMetas = JsonUtils.fromJson(strUserMeta, Map.class);
         }
         String uploadId = request.headers().get("X-UPLOAD-ID");
-        final S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
+        S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
         PutTask putTask = new PutTask(ctx, fileContent, s3Client, stsInfo, localFile, pcPath, uploadId, userMetas);
         fileExecutor.submit(putTask);
     }

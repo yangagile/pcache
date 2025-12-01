@@ -7,7 +7,7 @@ mkdir -p "${LOG_DIR}"
 
 VM_OPT="-Xms512m -Xmx1024m"
 
-ENVS_AUTH="-Dserver.port=8091 -Dpcp.ak=ak-pcp-admin  -Dpcp.sk=yWlt32Rw6uImzTcAKJ5AZO5Bqw9rPS1YSZKZfgyv3ao="
+ENVS_AUTH="-Dserver.address=0.0.0.0 -Dserver.port=8091 -Dpcp.ak=ak-pcp-admin  -Dpcp.sk=yWlt32Rw6uImzTcAKJ5AZO5Bqw9rPS1YSZKZfgyv3ao="
 ENVS_LOGS="-Dpcp.log.dir=${LOG_DIR}"
 ENVS_DATA="-Dpcp.data.dir=${PARENT_DIR}/data/"
 ENVS_PMS_URL="-Dpcp.pms.url=http://127.0.0.1:8080/"

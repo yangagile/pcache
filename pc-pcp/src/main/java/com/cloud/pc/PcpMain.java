@@ -16,9 +16,12 @@
 
 package com.cloud.pc;
 
+import com.cloud.pc.cache.BlockCache;
+import com.cloud.pc.cache.LRUEvictionPolicy;
 import com.cloud.pc.config.Envs;
 import com.cloud.pc.scanner.impl.DirectoryScannerImpl;
 import com.cloud.pc.pulse.PulseTask;
+import com.cloud.pc.stats.BlockCounter;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -60,6 +63,10 @@ public class PcpMain {
             System.out.println("\n========================================");
             System.out.printf("🚀 PCP is running at port: %d \n", Envs.port);
             System.out.println("========================================");
+
+            // init block Cache
+            BlockCache.init(Envs.BlockCacheSize, new LRUEvictionPolicy());
+            BlockCounter.instance().reset();
 
             // directory scanner
             DirectoryScannerImpl dataScanner = new DirectoryScannerImpl();

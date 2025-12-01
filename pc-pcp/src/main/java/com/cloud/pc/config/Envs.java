@@ -38,8 +38,6 @@ public class Envs {
             "/var/data", String::valueOf);
     public static int defaultBlockSize = ComUtils.getProps("pcp.block.size",
             5 * 1024 * 1024, Integer::valueOf);
-    public static Boolean enableListDir = ComUtils.getProps("pcp.enable.list.dir",
-            true, Boolean::valueOf);
     public static Long availableSize = ComUtils.getProps("pcp.available.size",
             10*1024*1024*1024L, Long::valueOf);
     public static Long timeSpan = ComUtils.getProps("pcp.data.time.span",
@@ -56,6 +54,10 @@ public class Envs {
             1024, Integer::valueOf);
     public static Long keepAliveTime = ComUtils.getProps("pcp.thread.keep.alive.time",
             60L, Long::valueOf);
+
+    // block memory cache
+    public static Integer BlockCacheSize = ComUtils.getProps("pcp.block.cache.size",
+            1024, Integer::valueOf);
 
     // log
     public static String logDir = ComUtils.getProps("pcp.log.dir",

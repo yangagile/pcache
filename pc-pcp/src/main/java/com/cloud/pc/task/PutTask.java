@@ -16,6 +16,7 @@
 
 package com.cloud.pc.task;
 
+import com.cloud.pc.cache.BlockCache;
 import com.cloud.pc.model.PcPath;
 import com.cloud.pc.model.StsInfo;
 import com.cloud.pc.utils.FileUtils;
@@ -83,7 +84,7 @@ public class PutTask implements Runnable {
                 ctx.executor().execute(() -> {
                     HttpHelper.sendResponse(ctx, HttpResponseStatus.OK, eTag);
                 });
-                saveToDisk();
+                addCacheAndDisk();
                 return;
             } catch (Exception e) {
                 LOG.error("exception to put {} size{} retryCount:{}", pcPath, content.length, retryCount, e);
@@ -122,8 +123,12 @@ public class PutTask implements Runnable {
         return response.eTag();
     }
 
-    private void saveToDisk() {
+    private void addCacheAndDisk() {
         try {
+            // add to memory cache
+            BlockCache.instance().putBlock(pcPath.toString(), content);
+
+            // save to disk
             if (!FileUtils.mkParentDir(Paths.get(localFile))) {
                 LOG.error("failed to create parent dir of {}", localFile);
                 throw new RuntimeException("failed to create parent dir");
