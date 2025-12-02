@@ -25,6 +25,7 @@ type Options struct {
 	DebugMode   bool
 	EnableStats bool
 	IsSmallFile bool
+	Checksum    string
 	BlockStats  *BlockStats
 	FileStats   *FileStats
 }
@@ -35,6 +36,7 @@ func NewOptions() *Options {
 		DebugMode:   false,
 		EnableStats: true,
 		IsSmallFile: false,
+		Checksum:    "",
 		BlockStats:  NewBlockStats(),
 		FileStats:   NewFileStats(),
 	}

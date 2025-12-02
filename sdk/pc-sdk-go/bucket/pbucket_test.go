@@ -69,6 +69,7 @@ func teardown() {
 func Test_PutGet_SmallFileFromLocal(t *testing.T) {
 	ctx := WithOptions(context.Background())
 
+	GetOptions(ctx).Checksum = "md5"
 	bucket, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
 	if err != nil {
 		t.Fatalf("failed to create bucket: %v", err)
@@ -95,6 +96,7 @@ func Test_PutGet_SmallFileFromLocal(t *testing.T) {
 		t.Fatalf("failed to put from local")
 	}
 	ctx = WithOptions(context.Background())
+	GetOptions(ctx).Checksum = "md5"
 	err = bucket.Get(ctx, fileKey, downloadPath)
 	if err != nil {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
@@ -107,7 +109,7 @@ func Test_PutGet_SmallFileFromLocal(t *testing.T) {
 
 func Test_PutGet_SmallFileFromPcp(t *testing.T) {
 	ctx := WithOptions(context.Background())
-
+	GetOptions(ctx).Checksum = "crc32"
 	bucket, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
 	if err != nil {
 		t.Fatalf("failed to create bucket: %v", err)
@@ -127,8 +129,8 @@ func Test_PutGet_SmallFileFromPcp(t *testing.T) {
 		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
 	}
 	stat := GetOptions(ctx).BlockStats
-	if stat.CountPcpLocal <= 0 {
-		t.Fatalf("failed to put from PCP")
+	if stat.CountPcpDisk <= 0 {
+		t.Fatalf("failed to put from PCP disk")
 	}
 	ctx = WithOptions(context.Background())
 	err = bucket.Get(ctx, fileKey, downloadPath)
@@ -136,8 +138,8 @@ func Test_PutGet_SmallFileFromPcp(t *testing.T) {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
 	}
 	stat = GetOptions(ctx).BlockStats
-	if stat.CountPcpCache <= 0 {
-		t.Fatalf("failed to get from PCP")
+	if stat.CountPcpMemory <= 0 {
+		t.Fatalf("failed to get from PCP memeory")
 	}
 }
 
@@ -158,7 +160,7 @@ func Test_PutWithPCache(t *testing.T) {
 		t.Fatalf("failed to file:%v with err:%v", fileName, err)
 	}
 	stats := GetOptions(ctx).BlockStats
-	if stats.CountPcpLocal <= 0 {
+	if stats.CountPcpDisk <= 0 {
 		t.Fatalf("failed to use PCP")
 	}
 
@@ -170,7 +172,7 @@ func Test_PutWithPCache(t *testing.T) {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
 	}
 	stats = GetOptions(ctx).BlockStats
-	if stats.CountPcpCache <= 0 {
+	if stats.CountPcpMemory <= 0 {
 		t.Fatalf("failed to use PCP")
 	}
 }
@@ -178,7 +180,7 @@ func Test_PutWithPCache(t *testing.T) {
 func Test_syncFolder(t *testing.T) {
 	ctx := WithOptions(context.Background())
 	GetOptions(ctx).DryRun = false
-	GetOptions(ctx).DebugMode = true
+	GetOptions(ctx).DebugMode = false
 
 	pb, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject,ListObject"})
 	if err != nil {
@@ -199,7 +201,6 @@ func Test_syncFolder(t *testing.T) {
 	if GetOptions(ctx).FileStats.CountSuccess != 2 {
 		t.Fatalf("failed to sync folder:%v to prefix:%v", folder, prefix)
 	}
-	fmt.Printf("FileStats: %s BlockStats: %s\n", GetOptions(ctx).FileStats, GetOptions(ctx).BlockStats)
 
 	// clean source
 	err = utils.CleanDirFromTempDir(testRootLocal)
@@ -209,6 +210,7 @@ func Test_syncFolder(t *testing.T) {
 
 	// sync back to local from bucket
 	ctx = WithOptions(context.Background())
+	GetOptions(ctx).DebugMode = false
 	err = pb.SyncPrefixToFolder(ctx, prefix, folder)
 	if err != nil {
 		t.Fatalf("failed to sync prefix:%v to folder:%v ", prefix, folder)

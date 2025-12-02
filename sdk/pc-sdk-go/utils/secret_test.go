@@ -18,14 +18,15 @@ package utils
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 )
 
 func Test_GenerateToken(t *testing.T) {
 	ak := "user01"
-	sk := "3oqMCtV+fwazQnpqBka5IaJ+lc0zDTpUJstXqqHDfh4=" // 生产环境应从安全来源获取
-	expirationMs := int64(3600000)                       // 1小时
+	sk := "3oqMCtV+fwazQnpqBka5IaJ+lc0zDTpUJstXqqHDfh4="
+	expirationMs := int64(3600000)
 
 	// 自定义声明
 	customClaims := map[string]interface{}{
@@ -34,33 +35,52 @@ func Test_GenerateToken(t *testing.T) {
 		"email":   "user@example.com",
 	}
 
-	// 1. 生成令牌
+	// 1. generate token
 	token, err := GenerateToken(ak, sk, expirationMs, customClaims)
 	if err != nil {
-		fmt.Println("令牌生成失败:", err)
+		t.Fatalf("failed to generate token with err:%v", err)
 		return
 	}
-	fmt.Println("生成的JWT令牌:\n", token)
+	fmt.Println("token:\n", token)
 
-	// 2. 解析令牌
+	// 2. parse token
 	claims, err := ParseToken(token, sk)
 	if err != nil {
-		fmt.Println("令牌解析失败:", err)
+		t.Fatalf("failed to parse token with err:%v", err)
 		return
 	}
 
-	// 3. 输出解析结果
-	fmt.Println("\n解析后的声明:")
+	// 3. print parse result
+	fmt.Println("\nparse result:")
 	fmt.Println("Subject (ak):", claims["sub"])
-	fmt.Println("签发时间 (iat):", time.Unix(int64(claims["iat"].(float64)), 0))
-	fmt.Println("过期时间 (exp):", time.Unix(int64(claims["exp"].(float64)), 0))
+	fmt.Println("Issued Time (iat):", time.Unix(int64(claims["iat"].(float64)), 0))
+	fmt.Println("Expiry Time (exp):", time.Unix(int64(claims["exp"].(float64)), 0))
 
-	fmt.Println("\n自定义声明:")
+	fmt.Println("\nuser claims:")
 	for key, value := range claims {
-		// 跳过标准声明
 		if key == "sub" || key == "iat" || key == "exp" {
 			continue
 		}
 		fmt.Printf("%s: %v\n", key, value)
 	}
+}
+
+func Test_GenerateChecksum(t *testing.T) {
+	testRoot := MergePath(os.TempDir(), "Test_GenerateChecksum")
+	testfile, err := CreateTestFile(testRoot, "test.txt", 1024)
+	if err != nil {
+		t.Fatalf("failed to create local file:%v with err:%v", testfile, err)
+	}
+
+	md5Base64, err := getMD5Base64FromFile(testfile)
+	if err != nil {
+		t.Fatalf("failed to calculate MD5 from file:%v with err:%v", testfile, err)
+	}
+	fmt.Printf("MD5 (Base64): %s\n", md5Base64)
+
+	crc32Base64, err := getCRC32Base64FromFile(testfile)
+	if err != nil {
+		t.Fatalf("failed to calculate CRC32 from file:%v with err:%v", testfile, err)
+	}
+	fmt.Printf("CRC32 (Base64): %s\n", crc32Base64)
 }

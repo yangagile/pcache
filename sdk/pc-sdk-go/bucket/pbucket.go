@@ -167,13 +167,13 @@ func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string
 		fileTask := &FileTask{
 			s3Client:   pb.getS3Client(),
 			stsInfo:    pb.getStsInfo(),
-			Bucket:     pb.bucket,
-			Type:       FILE_TYPE_PUT,
-			LocalPath:  localPath,
-			RemoteKey:  s3Key,
-			Size:       info.Size(),
-			BlockSize:  pb.blockSize,
-			BlockCount: blockCount,
+			bucket:     pb.bucket,
+			opsType:    FILE_TYPE_PUT,
+			localPath:  localPath,
+			remoteKey:  s3Key,
+			size:       info.Size(),
+			blockSize:  pb.blockSize,
+			blockCount: blockCount,
 		}
 
 		if options.DryRun {
@@ -186,6 +186,11 @@ func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string
 	if !options.DryRun {
 		fileMgr.Wait()
 	}
+
+	log.WithField("folder", folder).WithField("prefix", prefix).
+		WithField("BlockStats", GetOptions(ctx).BlockStats).
+		WithField("FileStats", GetOptions(ctx).FileStats).
+		Infoln("sync folder to prefix done")
 	return err
 }
 
@@ -208,6 +213,7 @@ func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string
 		}
 
 		for _, object := range result.Contents {
+
 			relKey, _ := filepath.Rel(prefix, *object.Key)
 			localFile := utils.MergePath(folder, relKey)
 			utils.EnsureParentDir(localFile)
@@ -215,13 +221,13 @@ func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string
 			fileTask := &FileTask{
 				s3Client:   pb.getS3Client(),
 				stsInfo:    pb.getStsInfo(),
-				Bucket:     pb.bucket,
-				Type:       FILE_TYPE_GET,
-				LocalPath:  localFile,
-				RemoteKey:  *object.Key,
-				Size:       *object.Size,
-				BlockSize:  pb.blockSize,
-				BlockCount: blockCount,
+				bucket:     pb.bucket,
+				opsType:    FILE_TYPE_GET,
+				localPath:  localFile,
+				remoteKey:  *object.Key,
+				size:       *object.Size,
+				blockSize:  pb.blockSize,
+				blockCount: blockCount,
 			}
 			if options.DryRun {
 				log.Printf("will get %s from %s%s", localFile, pb.bucket, *object.Key)
@@ -239,6 +245,10 @@ func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string
 	if !options.DryRun {
 		fileMgr.Wait()
 	}
+	log.WithField("prefix", prefix).WithField("folder", folder).
+		WithField("BlockStats", GetOptions(ctx).BlockStats).
+		WithField("FileStats", GetOptions(ctx).FileStats).
+		Infoln("sync prefix to folder done")
 	return err
 }
 
@@ -253,17 +263,17 @@ func (pb *PBucket) Put(ctx context.Context, localPath, objectKey string) error {
 	fileTask := &FileTask{
 		s3Client:   pb.getS3Client(),
 		stsInfo:    pb.getStsInfo(),
-		Bucket:     pb.bucket,
-		Type:       FILE_TYPE_PUT,
-		LocalPath:  localPath,
-		RemoteKey:  objectKey,
-		Size:       fileInfo.Size(),
-		BlockSize:  pb.blockSize,
-		BlockCount: blockCount,
+		bucket:     pb.bucket,
+		opsType:    FILE_TYPE_PUT,
+		localPath:  localPath,
+		remoteKey:  objectKey,
+		size:       fileInfo.Size(),
+		blockSize:  pb.blockSize,
+		blockCount: blockCount,
 	}
 	fileMgr := NewSingleFileManager(pb)
-	fileMgr.PutFile(ctx, fileTask)
-	return nil
+	err = fileMgr.PutFile(ctx, fileTask)
+	return err
 }
 
 func (pb *PBucket) Get(ctx context.Context, objectKey, localPath string) error {
@@ -281,18 +291,18 @@ func (pb *PBucket) Get(ctx context.Context, objectKey, localPath string) error {
 	fileTask := &FileTask{
 		s3Client:   pb.getS3Client(),
 		stsInfo:    pb.getStsInfo(),
-		Bucket:     pb.bucket,
-		Type:       FILE_TYPE_GET,
-		LocalPath:  localPath,
-		RemoteKey:  objectKey,
-		Size:       fileSize,
-		BlockSize:  pb.blockSize,
-		BlockCount: blockCount,
+		bucket:     pb.bucket,
+		metadata:   resp.Metadata,
+		opsType:    FILE_TYPE_GET,
+		localPath:  localPath,
+		remoteKey:  objectKey,
+		size:       fileSize,
+		blockSize:  pb.blockSize,
+		blockCount: blockCount,
 	}
 	fileMgr := NewSingleFileManager(pb)
-	fileMgr.GetFile(ctx, fileTask)
-
-	return nil
+	err = fileMgr.GetFile(ctx, fileTask)
+	return err
 }
 
 // below is private function

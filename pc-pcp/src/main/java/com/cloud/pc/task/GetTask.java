@@ -24,8 +24,6 @@ import com.cloud.pc.stats.BlockCounter;
 import com.cloud.pc.utils.*;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.*;
 import org.slf4j.Logger;
@@ -211,57 +209,5 @@ public class GetTask implements Runnable {
             LOG.error("[downloadBlock] exception to download block {}！", pcPath, e);
         }
         return null;
-    }
-
-    private void getAndSend(HttpResponse response) {
-        LOG.info("[getAndSend] localFile={} fullKey={}", stsInfo, localFile, pcPath);
-
-        long pos = (pcPath.getNumber()-1)* blockSize;
-        String range = String.format("bytes=%d-%d",pos, pos + size - 1);
-
-        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, size);
-        response.headers().set("X-CACHE-HIT",0);
-        ctx.write(response);
-
-        FileOutputStream fos = null;
-        try {
-            fos = new FileOutputStream(localFile);
-        } catch (FileNotFoundException e) {
-            LOG.error("[getAndSend] failed to open file {} for write", localFile, e);
-            sendError(ctx, NOT_FOUND);
-        }
-        try {
-            FileUtils.mkParentDir(Paths.get(localFile));
-            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-                    .bucket(stsInfo.getBucketName())
-                    .key(pcPath.getKey())
-                    .range(range)
-                    .build();
-
-            ResponseInputStream<GetObjectResponse> res = s3Client.getObject(
-                    getObjectRequest, ResponseTransformer.toInputStream());
-            if (!S3Utils.isGetObjectSuccessful(res)) {
-                LOG.error("[getAndSend] failed to get object！for invalid response {}", res);
-                sendError(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR);
-            }
-            byte[] read_buf = new byte[4096];
-            int read_len;
-            while ((read_len = res.read(read_buf)) > 0) {
-                ctx.write(Unpooled.wrappedBuffer(read_buf, 0, read_len));
-                fos.write(read_buf, 0, read_len);
-            }
-            ChannelFuture future = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
-            future.addListener(ChannelFutureListener.CLOSE);
-
-        } catch (IOException e) {
-            LOG.error("[getAndSend] failed to get object！", e);
-            sendError(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR);
-        } finally {
-            try {
-                fos.close();
-            } catch (IOException e) {
-                LOG.info("exception to close file {}", localFile, e);
-            }
-        }
     }
 }

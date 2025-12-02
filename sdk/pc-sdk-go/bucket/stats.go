@@ -27,15 +27,16 @@ type BlockStats struct {
 	TimeMin           int64
 	CountTotal        int64
 	CountFail         int64
-	CountPcpLocal     int64
-	CountPcpCache     int64
+	CountPcpRemote    int64
+	CountPcpDisk      int64
+	CountPcpMemory    int64
 	CountLocal        int64
 	CountLocalPcpFail int64
 }
 
 func NewBlockStats() *BlockStats {
-	return &BlockStats{0, 0, math.MaxInt, 0, 0, 0,
-		0, 0, 0}
+	return &BlockStats{0, 0, math.MaxInt,
+		0, 0, 0, 0, 0, 0, 0}
 }
 
 func (s *BlockStats) Update(b *Block) {
@@ -43,10 +44,12 @@ func (s *BlockStats) Update(b *Block) {
 	switch b.State {
 	case STATE_FAIL:
 		s.CountFail++
-	case STATE_OK_PCP_LOCAL:
-		s.CountPcpLocal++
-	case STATE_OK_PCP_CACHE:
-		s.CountPcpCache++
+	case STATE_OK_PCP_REMOTE:
+		s.CountPcpRemote++
+	case STATE_OK_PCP_DISK:
+		s.CountPcpDisk++
+	case STATE_OK_PCP_MEMORY:
+		s.CountPcpMemory++
 	case STATE_OK_LOCAL:
 		s.CountLocal++
 	case STATE_OK_LOCAL_PCP_FAIL:
@@ -61,8 +64,9 @@ func (s *BlockStats) Update(b *Block) {
 	s.TimeTotal += b.TimeDuration
 }
 func (s BlockStats) String() string {
-	return fmt.Sprintf("Count(total:%d ok_pcp_cache:%d ok_pcp_local:%d ok_local:%d ok_local_pcp_fail:%d fail:%d) "+
-		"Time(avg:%d max:%d min:%d)ms", s.CountTotal, s.CountPcpCache, s.CountPcpLocal, s.CountLocal,
+	return fmt.Sprintf("Count(total:%d ok_pcp_remote:%d ok_pcp_disk:%d ok_pcp_momery:%d "+
+		"ok_local:%d ok_local_pcp_fail:%d fail:%d) Time(avg:%d max:%d min:%d)ms",
+		s.CountTotal, s.CountPcpRemote, s.CountPcpDisk, s.CountPcpMemory, s.CountLocal,
 		s.CountLocalPcpFail, s.CountFail, s.GetAverageTime(), s.TimeMax, s.TimeMin)
 }
 
@@ -97,33 +101,33 @@ func NewFileStats() *FileStats {
 func (s *FileStats) Update(f *FileTask) {
 	// update count
 	s.CountTotal++
-	if f.Err != nil {
+	if f.err != nil {
 		s.CountFail++
 	} else {
 		s.CountSuccess++
 	}
 
 	// update time
-	s.TimeTotal += f.TimeDuration
-	if f.TimeDuration > s.TimeMax {
-		s.TimeMax = f.TimeDuration
+	s.TimeTotal += f.timeDuration
+	if f.timeDuration > s.TimeMax {
+		s.TimeMax = f.timeDuration
 	}
-	if f.TimeDuration < s.TimeMin {
-		s.TimeMin = f.TimeDuration
+	if f.timeDuration < s.TimeMin {
+		s.TimeMin = f.timeDuration
 	}
 
 	// update size
-	s.SizeTotal += f.Size
-	if f.Size > s.SizeMax {
-		s.SizeMax = f.Size
+	s.SizeTotal += f.size
+	if f.size > s.SizeMax {
+		s.SizeMax = f.size
 	}
-	if f.Size < s.SizeMin {
-		s.SizeMin = f.Size
+	if f.size < s.SizeMin {
+		s.SizeMin = f.size
 	}
 }
 
 func (s FileStats) String() string {
-	return fmt.Sprintf("Count(total:%d ok:%d fail:%d) Size(total:%d avg:%d max:%d min:%d)bytes "+
+	return fmt.Sprintf("Count(total:%d ok:%d fail:%d) size(total:%d avg:%d max:%d min:%d)bytes "+
 		"Time(avg:%d max:%d min:%d)ms", s.CountTotal, s.CountSuccess, s.CountFail,
 		s.SizeTotal, s.GetAverageSize(), s.SizeMax, s.SizeMin, s.GetAverageTime(), s.TimeMax, s.TimeMin)
 }

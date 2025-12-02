@@ -17,7 +17,6 @@
 package bucket
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -35,9 +34,10 @@ import (
 )
 
 const (
-	STATE_FAIL         = iota // 0
-	STATE_OK_PCP_LOCAL        // 1
-	STATE_OK_PCP_CACHE
+	STATE_FAIL          = iota // 0
+	STATE_OK_PCP_REMOTE        // 1
+	STATE_OK_PCP_DISK
+	STATE_OK_PCP_MEMORY     // 2
 	STATE_OK_LOCAL          // 2
 	STATE_OK_LOCAL_PCP_FAIL // 2
 )
@@ -56,12 +56,12 @@ func (c *Block) GetPcPath() string {
 	if c.PcpHost != "" && !strings.HasSuffix(c.PcpHost, "/") {
 		c.PcpHost += "/"
 	}
-	return fmt.Sprintf("%s%s/%s.%d_%d", c.PcpHost, c.File.Bucket, c.File.RemoteKey,
-		c.BlockNumber, c.File.BlockCount)
+	return fmt.Sprintf("%s%s/%s.%d_%d", c.PcpHost, c.File.bucket, c.File.remoteKey,
+		c.BlockNumber, c.File.blockCount)
 }
 
 func (c *Block) GetLocalPartPath() string {
-	return fmt.Sprintf("%s.%d_%d", c.File.LocalPath, c.BlockNumber, c.File.BlockCount)
+	return fmt.Sprintf("%s.%d_%d", c.File.localPath, c.BlockNumber, c.File.blockCount)
 }
 
 type BlockWorker struct {
@@ -101,7 +101,7 @@ func (w *BlockWorker) Add(Block *Block) {
 }
 
 // put
-func (w *BlockWorker) putToPcp(blockInfo *Block, stsInfo *StsInfo, buffer []byte) (string, error) {
+func (w *BlockWorker) putToPcp(block *Block, stsInfo *StsInfo, buffer []byte) (string, error) {
 	client := &http.Client{
 		Timeout: 90 * time.Second,
 	}
@@ -109,7 +109,7 @@ func (w *BlockWorker) putToPcp(blockInfo *Block, stsInfo *StsInfo, buffer []byte
 	req, err := http.NewRequestWithContext(
 		context.Background(),
 		"POST",
-		blockInfo.GetPcPath(),
+		block.GetPcPath(),
 		bytes.NewReader(buffer),
 	)
 	if err != nil {
@@ -118,14 +118,20 @@ func (w *BlockWorker) putToPcp(blockInfo *Block, stsInfo *StsInfo, buffer []byte
 
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Content-Length", strconv.Itoa(len(buffer)))
-
 	stsJson, err := json.Marshal(stsInfo)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("X-STS", string(stsJson))
-	if blockInfo.File.UploadId != nil {
-		req.Header.Set("X-UPLOAD-ID", *blockInfo.File.UploadId)
+	if block.File.uploadId != nil {
+		req.Header.Set("X-UPLOAD-ID", *block.File.uploadId)
+	}
+	if block.File.metadata != nil && len(block.File.metadata) > 0 {
+		metaJson, err := json.Marshal(block.File.metadata)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("X-USER-META", string(metaJson))
 	}
 
 	resp, err := client.Do(req)
@@ -150,9 +156,10 @@ func (w *BlockWorker) putFromLocal(block *Block, buffer []byte) (string, error) 
 	if block.File.IsSingleFile() {
 		// small file
 		input := &s3.PutObjectInput{
-			Bucket: aws.String(block.File.stsInfo.BucketName),
-			Key:    aws.String(block.File.RemoteKey),
-			Body:   bytes.NewReader(buffer),
+			Bucket:   aws.String(block.File.stsInfo.BucketName),
+			Key:      aws.String(block.File.remoteKey),
+			Body:     bytes.NewReader(buffer),
+			Metadata: block.File.metadata,
 		}
 		uploadResp, err := block.File.s3Client.PutObject(context.TODO(), input)
 		if err != nil {
@@ -164,8 +171,8 @@ func (w *BlockWorker) putFromLocal(block *Block, buffer []byte) (string, error) 
 		PartNumber := int32(block.BlockNumber + 1)
 		uploadResp, err := block.File.s3Client.UploadPart(context.TODO(), &s3.UploadPartInput{
 			Bucket:     aws.String(block.File.stsInfo.BucketName),
-			Key:        aws.String(block.File.RemoteKey),
-			UploadId:   block.File.UploadId,
+			Key:        aws.String(block.File.remoteKey),
+			UploadId:   block.File.uploadId,
 			PartNumber: &PartNumber,
 			Body:       bytes.NewReader(buffer),
 		})
@@ -176,15 +183,21 @@ func (w *BlockWorker) putFromLocal(block *Block, buffer []byte) (string, error) 
 	}
 }
 func (w *BlockWorker) PutBlock(block *Block) error {
+	options := GetOptions(*block.File.ctx)
 	// read file
 	buf := make([]byte, block.Size)
-	file, err := os.Open(block.File.LocalPath)
+	file, err := os.Open(block.File.localPath)
 	defer file.Close()
 	if err != nil {
+		log.WithError(err).WithField("localPath", block.File.localPath).
+			Errorln("failed to open local block file")
 		return err
 	}
-	_, err = file.ReadAt(buf, block.BlockNumber*block.File.BlockSize)
+	_, err = file.ReadAt(buf, block.BlockNumber*block.File.blockSize)
 	if err != nil {
+		log.WithError(err).WithField("localPath", block.File.localPath).
+			WithField("pos", block.BlockNumber*block.File.blockSize).
+			Errorln("failed to read local block file")
 		return err
 	}
 
@@ -193,11 +206,16 @@ func (w *BlockWorker) PutBlock(block *Block) error {
 	if block.PcpHost != "" {
 		eTag, err = w.putToPcp(block, block.File.stsInfo, buf)
 		if err != nil {
-			log.WithError(err).WithField("PcpHost", block.PcpHost).Errorln("failed to put with PCP")
+			log.WithError(err).WithField("PcpHost", block.PcpHost).WithField("block", block.GetPcPath()).
+				Errorln("failed to put block to PCP, will try from local.")
 			// will try to put from local
 			block.State = STATE_OK_LOCAL_PCP_FAIL
 		} else {
-			block.State = STATE_OK_PCP_LOCAL
+			block.State = STATE_OK_PCP_DISK
+			if options.DebugMode {
+				log.WithField("PcpHost", block.PcpHost).WithField("block", block.GetPcPath()).
+					Infoln("successfully put block to PCP")
+			}
 		}
 	}
 
@@ -205,12 +223,17 @@ func (w *BlockWorker) PutBlock(block *Block) error {
 	if eTag == "" {
 		eTag, err = w.putFromLocal(block, buf)
 		if err != nil {
-			log.WithError(err).Errorln("failed to put with from local")
+			log.WithError(err).WithField("block", block.GetPcPath()).
+				Errorln("failed to put block from local")
 			block.State = STATE_FAIL
 			return err
 		} else {
 			if block.State != STATE_OK_LOCAL_PCP_FAIL {
 				block.State = STATE_OK_LOCAL
+			}
+			if options.DebugMode {
+				log.WithField("block", block.GetPcPath()).
+					Infoln("successfully put block from local")
 			}
 		}
 	}
@@ -224,17 +247,15 @@ func (w *BlockWorker) getFromPcp(blockInfo *Block, stsInfo *StsInfo) error {
 	req, err := http.NewRequestWithContext(context.Background(), "GET",
 		blockInfo.GetPcPath(), nil)
 	if err != nil {
-		log.WithError(err).WithField("url", blockInfo.GetPcPath()).Errorln("failed to new request")
 		return err
 	}
 	stsJson, err := json.Marshal(stsInfo)
 	if err != nil {
-		log.WithError(err).WithField("stsInfo", stsInfo).Errorln("failed to Marshal stsInfo")
 		return err
 	}
 	req.Header.Set("X-STS", string(stsJson))
-	req.Header.Set("X-DATA-SIZE", strconv.FormatInt(blockInfo.File.Size, 10))
-	req.Header.Set("X-BLOCK-SIZE", strconv.FormatInt(blockInfo.File.BlockSize, 10))
+	req.Header.Set("X-DATA-SIZE", strconv.FormatInt(blockInfo.File.size, 10))
+	req.Header.Set("X-BLOCK-SIZE", strconv.FormatInt(blockInfo.File.blockSize, 10))
 
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -246,22 +267,52 @@ func (w *BlockWorker) getFromPcp(blockInfo *Block, stsInfo *StsInfo) error {
 	// request
 	resp, err := client.Do(req)
 	if err != nil {
-		log.WithError(err).WithField("request", req).Errorln("failed to request http")
+		log.WithError(err).WithField("request", req).Errorln("failed to request PCP")
 		return err
 	}
 	defer resp.Body.Close()
 
 	// check response
 	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("server returned: %s", resp.Status)
-		log.WithError(err).Errorln("invalid response code")
+		log.WithError(err).Errorln("invalid PCP response code")
+		err = fmt.Errorf("invalid PCP response code: %s", resp.Status)
 		return err
+	}
+
+	contentLength := resp.Header.Get("Content-Length")
+	if contentLength != "" {
+		dataSize, err := strconv.ParseInt(contentLength, 10, 64)
+		if err == nil && dataSize > 0 {
+			if blockInfo.Size == 0 {
+				blockInfo.Size = dataSize
+			} else if dataSize != blockInfo.Size {
+				return fmt.Errorf("size is mismatch revieve:%d block:%d", dataSize, blockInfo.Size)
+			}
+		}
+	}
+
+	// get response stats
+	if cacheHit := resp.Header.Get("X-CACHE-HIT"); cacheHit != "" {
+		hitCount, err := strconv.Atoi(cacheHit)
+		if err == nil {
+			blockInfo.State = hitCount
+		} else {
+			log.WithError(err).WithField(" X-CACHE-HIT", hitCount).
+				Errorln("invalid format of X-CACHE-HIT")
+		}
+	}
+
+	buffer, err := io.ReadAll(resp.Body)
+	if blockInfo.Size == 0 {
+		blockInfo.Size = int64(len(buffer))
+	} else if blockInfo.Size != int64(len(buffer)) {
+		return fmt.Errorf("size is mismatch revieve:%d block:%d", len(buffer), blockInfo.Size)
 	}
 
 	// save to file
 	var localFile string
 	if blockInfo.File.IsSingleFile() {
-		localFile = blockInfo.File.LocalPath
+		localFile = blockInfo.File.localPath
 	} else {
 		localFile = blockInfo.GetLocalPartPath()
 	}
@@ -271,34 +322,8 @@ func (w *BlockWorker) getFromPcp(blockInfo *Block, stsInfo *StsInfo) error {
 		return err
 	}
 	defer outFile.Close()
+	outFile.Write(buffer)
 
-	bufferedWriter := bufio.NewWriterSize(outFile, 8192)
-	defer bufferedWriter.Flush()
-	bufferedReader := bufio.NewReaderSize(resp.Body, 8192)
-	if _, err := io.CopyBuffer(bufferedWriter, bufferedReader, make([]byte, 8192)); err != nil {
-		log.WithError(err).Errorln("failed to copy buffer")
-		return err
-	}
-	if err := bufferedWriter.Flush(); err != nil {
-		log.WithError(err).Errorln("failed to flush buffer")
-		return err
-	}
-
-	// get response stats
-	if cacheHit := resp.Header.Get("X-CACHE-HIT"); cacheHit != "" {
-		hitCount, err := strconv.Atoi(cacheHit)
-		if err == nil {
-			if hitCount > 0 {
-				blockInfo.State = STATE_OK_PCP_CACHE
-			} else {
-				blockInfo.State = STATE_OK_PCP_LOCAL
-			}
-		} else {
-			log.WithError(err).WithField(" X-CACHE-HIT", localFile).
-				Errorln("failed to get local X-CACHE-HIT")
-			blockInfo.State = STATE_OK_PCP_CACHE
-		}
-	}
 	return nil
 }
 
@@ -306,7 +331,7 @@ func (w *BlockWorker) getFromLocal(block *Block) error {
 	// create local file
 	var localFile string
 	if block.File.IsSingleFile() {
-		localFile = block.File.LocalPath
+		localFile = block.File.localPath
 	} else {
 		localFile = block.GetLocalPartPath()
 	}
@@ -323,27 +348,27 @@ func (w *BlockWorker) getFromLocal(block *Block) error {
 	if block.File.IsSingleFile() {
 		result, err = block.File.s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
 			Bucket: aws.String(block.File.stsInfo.BucketName),
-			Key:    aws.String(block.File.RemoteKey),
+			Key:    aws.String(block.File.remoteKey),
 		})
 		if err != nil {
 			log.WithError(err).WithField("bucket", block.File.stsInfo.BucketName).
-				WithField("key", block.File.RemoteKey).
+				WithField("key", block.File.remoteKey).
 				Errorln("failed to get file from s3")
 			return err
 		}
 
 	} else {
-		offset := block.BlockNumber * block.File.BlockSize
-		rangeHeader := fmt.Sprintf("bytes=%d-%d", offset, offset+block.File.Size-1)
+		offset := block.BlockNumber * block.File.blockSize
+		rangeHeader := fmt.Sprintf("bytes=%d-%d", offset, offset+block.File.size-1)
 
 		result, err = block.File.s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
 			Bucket: aws.String(block.File.stsInfo.BucketName),
-			Key:    aws.String(block.File.RemoteKey),
+			Key:    aws.String(block.File.remoteKey),
 			Range:  aws.String(rangeHeader),
 		})
 		if err != nil {
 			log.WithError(err).WithField("bucket", block.File.stsInfo.BucketName).
-				WithField("key", block.File.RemoteKey).
+				WithField("key", block.File.remoteKey).
 				WithField("rangeHeader", rangeHeader).
 				Errorln("failed to get part of object from s3")
 			return err
@@ -358,11 +383,21 @@ func (w *BlockWorker) getFromLocal(block *Block) error {
 }
 
 func (w *BlockWorker) GetBlock(block *Block) error {
+	options := GetOptions(*block.File.ctx)
 	var err error
 	if block.PcpHost != "" {
 		err = w.getFromPcp(block, block.File.stsInfo)
 		if err != nil {
 			block.State = STATE_OK_LOCAL_PCP_FAIL
+			log.WithError(err).WithField("PcpHost", block.PcpHost).WithField("block", block.GetPcPath()).
+				Errorln("failed to get block from PCP, will try from local.")
+		} else {
+			if options.DebugMode {
+				log.WithField("PcpHost", block.PcpHost).
+					WithField("block", block.GetPcPath()).
+					WithField("hit-cache", block.State).
+					Infoln("successfully get block from PCP")
+			}
 		}
 	}
 	if block.PcpHost == "" || err != nil {
@@ -370,20 +405,31 @@ func (w *BlockWorker) GetBlock(block *Block) error {
 		if err == nil {
 			if block.State != STATE_OK_LOCAL_PCP_FAIL {
 				block.State = STATE_OK_LOCAL
+				if options.DebugMode {
+					log.WithError(err).WithField("block", block.GetPcPath()).
+						Errorln("successfully get block from local")
+				}
+			} else {
+				if options.DebugMode {
+					log.WithError(err).WithField("block", block.GetPcPath()).
+						Errorln("successfully get block from local affter PCP failed")
+				}
 			}
 		} else {
 			block.State = STATE_FAIL
+			log.WithError(err).WithField("block", block.GetPcPath()).
+				Errorln("failed to get block.")
 		}
 	}
 	return err
 }
 
 func (w *BlockWorker) processBlock(block *Block) {
-	defer block.File.Wg.Done()
+	defer block.File.wg.Done()
 	startTime := time.Now().UnixMilli()
-	if block.File.Type == FILE_TYPE_PUT {
+	if block.File.opsType == FILE_TYPE_PUT {
 		w.PutBlock(block)
-	} else if block.File.Type == FILE_TYPE_GET {
+	} else if block.File.opsType == FILE_TYPE_GET {
 		w.GetBlock(block)
 	}
 	block.TimeDuration = time.Now().UnixMilli() - startTime

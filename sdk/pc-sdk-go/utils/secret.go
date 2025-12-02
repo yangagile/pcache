@@ -17,8 +17,13 @@
 package utils
 
 import (
+	"crypto/md5"
+	"encoding/base64"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
+	"hash/crc32"
+	"io"
+	"os"
 	"time"
 )
 
@@ -65,4 +70,64 @@ func ParseToken(tokenString, sk string) (jwt.MapClaims, error) {
 	}
 
 	return nil, fmt.Errorf("无效令牌")
+}
+
+// generate MD5(Base64) from file
+func GetMD5Base64FromFile(fileName string) (string, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := md5.New()
+
+	buffer := make([]byte, 4096)
+	for {
+		bytesRead, err := file.Read(buffer)
+		if err != nil && err != io.EOF {
+			return "", err
+		}
+		if bytesRead == 0 {
+			break
+		}
+		hash.Write(buffer[:bytesRead])
+	}
+
+	hashBytes := hash.Sum(nil)
+	return base64.StdEncoding.EncodeToString(hashBytes), nil
+}
+
+// generate CRC32(Base64) from file
+func GetCRC32Base64FromFile(fileName string) (string, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	crc32Hash := crc32.NewIEEE()
+
+	buffer := make([]byte, 4096)
+	for {
+		bytesRead, err := file.Read(buffer)
+		if err != nil && err != io.EOF {
+			return "", err
+		}
+		if bytesRead == 0 {
+			break
+		}
+		crc32Hash.Write(buffer[:bytesRead])
+	}
+
+	crcValue := crc32Hash.Sum32()
+
+	// Convert uint32 to a 4-byte array (big-endian)
+	crcBytes := make([]byte, 4)
+	crcBytes[0] = byte(crcValue >> 24)
+	crcBytes[1] = byte(crcValue >> 16)
+	crcBytes[2] = byte(crcValue >> 8)
+	crcBytes[3] = byte(crcValue)
+
+	return base64.StdEncoding.EncodeToString(crcBytes), nil
 }

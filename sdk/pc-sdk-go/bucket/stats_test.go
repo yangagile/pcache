@@ -38,7 +38,9 @@ func Test_FileStats_String(t *testing.T) {
 func Test_BlockStats_String(t *testing.T) {
 	blockStats := NewBlockStats()
 	blockStats.CountTotal = 10
-	blockStats.CountPcpCache = 8
+	blockStats.CountPcpRemote = 8
+	blockStats.CountPcpDisk = 2
+	blockStats.CountPcpMemory = 2
 	blockStats.CountLocal = 2
 	blockStats.TimeTotal = 10000
 	blockStats.TimeMax = 20000
