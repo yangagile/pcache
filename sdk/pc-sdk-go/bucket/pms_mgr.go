@@ -100,7 +100,7 @@ func (pm *PmsManager) GetRoutingResult(bucket, path string, permission []string)
 		if err == nil {
 			return routing, nil
 		}
-		log.WithError(err).WithField("bucket", pm.urlProve.GetUrl()).WithField("retry time", i).
+		log.WithError(err).WithField("Bucket", pm.urlProve.GetUrl()).WithField("retry time", i).
 			Errorln("failed get routing result list, retry ...")
 	}
 	return routing, err
@@ -124,7 +124,7 @@ func (pm *PmsManager) interGetRoutingResult(bucket, path string, permission []st
 	header["X-AK"] = pm.secretMgr.GetAccessKey()
 
 	claims := map[string]interface{}{
-		"bucket":      bucket,
+		"Bucket":      bucket,
 		"path":        path,
 		"permissions": permission,
 	}
@@ -147,7 +147,7 @@ func (pm *PmsManager) GetPcpList(checksum string) (*utils.PcpTable, error) {
 		if err == nil {
 			return pcpTable, nil
 		}
-		log.WithError(err).WithField("bucket", pm.urlProve.GetUrl()).WithField("retry time", i).
+		log.WithError(err).WithField("Bucket", pm.urlProve.GetUrl()).WithField("retry time", i).
 			Errorln("failed get PCP list, retry ...")
 	}
 	return pcpTable, err

@@ -30,11 +30,11 @@ func Test_NewS3ClientWithSTS(t *testing.T) {
 
 	s3Client := newS3ClientMgr.GetS3Client()
 	if s3Client != nil {
-		t.Fatalf("s3Client should be nil")
+		t.Fatalf("S3Client should be nil")
 	}
 
 	stsInfo := newS3ClientMgr.GetStsInfo()
 	if stsInfo != nil {
-		t.Fatalf("stsInfo should be nil")
+		t.Fatalf("Sts should be nil")
 	}
 }

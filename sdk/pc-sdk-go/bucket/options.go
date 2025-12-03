@@ -21,24 +21,28 @@ import (
 )
 
 type Options struct {
-	DryRun      bool
-	DebugMode   bool
-	EnableStats bool
-	IsSmallFile bool
-	Checksum    string
-	BlockStats  *BlockStats
-	FileStats   *FileStats
+	DryRun        bool
+	DebugMode     bool
+	EnableStats   bool
+	IsSmallFile   bool // LocalSize is less than block LocalSize, will take special method for performance
+	skipExisting  bool // if the local file or remote object is existing, not replace.
+	skipUnchanged bool // if the local file  remote object is same, not replace.
+	Checksum      string
+	BlockStats    *BlockStats
+	FileStats     *FileStats
 }
 
 func NewOptions() *Options {
 	return &Options{
-		DryRun:      false,
-		DebugMode:   false,
-		EnableStats: true,
-		IsSmallFile: false,
-		Checksum:    "",
-		BlockStats:  NewBlockStats(),
-		FileStats:   NewFileStats(),
+		DryRun:        false,
+		DebugMode:     false,
+		EnableStats:   true,
+		IsSmallFile:   false,
+		skipExisting:  false,
+		skipUnchanged: false,
+		Checksum:      "",
+		BlockStats:    NewBlockStats(),
+		FileStats:     NewFileStats(),
 	}
 }
 

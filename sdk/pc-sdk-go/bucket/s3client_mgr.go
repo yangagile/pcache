@@ -62,11 +62,3 @@ func NewS3ClientWithSTS(ctx context.Context, stsInfo *StsInfo) (*s3.Client, erro
 	})
 	return client, nil
 }
-
-func HeadObject(s3Client *s3.Client, bucketName string, objectKey string) (*s3.HeadObjectOutput, error) {
-	input := &s3.HeadObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(objectKey),
-	}
-	return s3Client.HeadObject(context.TODO(), input)
-}

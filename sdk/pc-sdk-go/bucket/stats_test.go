@@ -24,7 +24,7 @@ import (
 func Test_FileStats_String(t *testing.T) {
 	fileStats := NewFileStats()
 	fileStats.CountTotal = 10
-	fileStats.CountSuccess = 8
+	fileStats.CountOk = 8
 	fileStats.CountFail = 2
 	fileStats.SizeTotal = 1024 * 1024 * 1024
 	fileStats.SizeMax = 10 * 1024 * 1024 * 1024
@@ -32,7 +32,7 @@ func Test_FileStats_String(t *testing.T) {
 	fileStats.TimeTotal = 10000
 	fileStats.TimeMax = 20000
 	fileStats.TimeMin = 100
-	fmt.Printf("file stats: %s \n", fileStats)
+	fmt.Printf("file Stats: %s \n", fileStats)
 }
 
 func Test_BlockStats_String(t *testing.T) {
@@ -45,5 +45,5 @@ func Test_BlockStats_String(t *testing.T) {
 	blockStats.TimeTotal = 10000
 	blockStats.TimeMax = 20000
 	blockStats.TimeMin = 100
-	fmt.Printf("file stats: %s \n", blockStats)
+	fmt.Printf("file Stats: %s \n", blockStats)
 }

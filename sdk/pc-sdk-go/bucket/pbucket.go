@@ -40,7 +40,7 @@ type PBucket struct {
 	groupNumber         int
 	stsTtlSec           int64          // sts duration time
 	s3ClientMgrPtr      unsafe.Pointer // *S3ClientManager
-	S3ClientMgrUpdating int32          // 1: S3ClientMgr is updating
+	s3ClientMgrUpdating int32          // 1: S3ClientMgr is updating
 	pcpMgrPtr           unsafe.Pointer // *PcpManager
 	pcpMgrTtlSec        int64          // pcp Table duration time
 	pcpMgrUpdating      int32          // 1: PcpManager is updating
@@ -59,7 +59,7 @@ func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions 
 		return nil, fmt.Errorf("pclient: missing pmsUrl")
 	}
 	if bucket == "" {
-		return nil, fmt.Errorf("pclient: missing bucket")
+		return nil, fmt.Errorf("pclient: missing Bucket")
 	}
 	if ak == "" || sk == "" {
 		return nil, fmt.Errorf("pclient: ak, sk required")
@@ -119,7 +119,7 @@ func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions 
 	// init block put/get worker threads
 	pb.blockWorker = NewBlockWorker(pb.workerThreadNumber, pb.workerChanSize)
 	pb.blockWorker.Start()
-	log.WithField("bucket info", pb.PrintInfo()).Infoln("create bucket done")
+	log.WithField("Bucket info", pb.PrintInfo()).Infoln("create Bucket done")
 	return pb, nil
 }
 
@@ -128,11 +128,95 @@ func (pb *PBucket) Close() {
 }
 
 func (pb *PBucket) PrintInfo() string {
-	return fmt.Sprintf("bucket: %s, path: %s", pb.bucket, pb.path)
+	return fmt.Sprintf("Bucket: %s, path: %s", pb.bucket, pb.path)
 }
 
 func (pb *PBucket) EnablePCache(pcpEnable bool) {
 	pb.pcpMgrEnable = pcpEnable
+}
+
+func (pb *PBucket) PutObject(ctx context.Context, localPath, objectKey string) (*s3.PutObjectOutput, error) {
+	fileInfo, err := os.Stat(localPath)
+	if err != nil {
+		log.WithError(err).WithField("LocalFile", localPath).
+			Errorln("failed to open file")
+		return nil, err
+	}
+	blockCount := (fileInfo.Size() + pb.blockSize - 1) / pb.blockSize
+	fileTask := &FileTask{
+		S3Client:   pb.getS3Client(),
+		Sts:        pb.getStsInfo(),
+		Bucket:     pb.bucket,
+		Type:       FILE_TYPE_PUT,
+		LocalFile:  localPath,
+		ObjectKey:  objectKey,
+		LocalSize:  fileInfo.Size(),
+		BlockSize:  pb.blockSize,
+		BlockCount: blockCount,
+		Stats:      BSTATE_FAIL,
+	}
+	fileMgr := NewSingleFileManager(pb)
+	err = fileMgr.PutFile(ctx, fileTask)
+	if err != nil {
+		return nil, err
+	}
+	Etag := "cached"
+	if fileTask.ETag == nil {
+		Etag = *fileTask.ETag
+	}
+	return &s3.PutObjectOutput{
+		ETag: &Etag,
+		Size: &fileTask.LocalSize,
+	}, nil
+}
+
+func (pb *PBucket) GetObject(ctx context.Context, objectKey, localPath string) (*s3.GetObjectOutput, error) {
+	fileTask := &FileTask{
+		S3Client:  pb.getS3Client(),
+		Sts:       pb.getStsInfo(),
+		Bucket:    pb.bucket,
+		Type:      FILE_TYPE_GET,
+		LocalFile: localPath,
+		ObjectKey: objectKey,
+		BlockSize: pb.blockSize,
+		Stats:     BSTATE_FAIL,
+	}
+	fileMgr := NewSingleFileManager(pb)
+	err := fileMgr.GetFile(ctx, fileTask)
+	if err != nil {
+		return nil, err
+	}
+	Etag := "cached"
+	if fileTask.ETag == nil {
+		Etag = *fileTask.ETag
+	}
+	return &s3.GetObjectOutput{
+		ETag:     &Etag,
+		Metadata: fileTask.Metadata,
+	}, nil
+}
+
+func (pb *PBucket) DeleteObject(ctx context.Context, objectKey string) (*s3.DeleteObjectOutput, error) {
+	out, err := pb.getS3Client().DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+		Bucket: aws.String(pb.getStsInfo().BucketName),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		log.WithError(err).WithField("key", objectKey).Errorln("failed to head object")
+	}
+	return out, err
+}
+
+func (pb *PBucket) HeadObject(ctx context.Context, objectKey string) (*s3.HeadObjectOutput, error) {
+	input := &s3.HeadObjectInput{
+		Bucket: aws.String(pb.getStsInfo().BucketName),
+		Key:    aws.String(objectKey),
+	}
+	resp, err := pb.getS3Client().HeadObject(context.TODO(), input)
+	if err != nil {
+		log.WithError(err).WithField("key", objectKey).Errorln("failed to head object")
+	}
+	return resp, err
 }
 
 func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string) error {
@@ -165,15 +249,16 @@ func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string
 		// new file task
 		blockCount := (info.Size() + pb.blockSize - 1) / pb.blockSize
 		fileTask := &FileTask{
-			s3Client:   pb.getS3Client(),
-			stsInfo:    pb.getStsInfo(),
-			bucket:     pb.bucket,
-			opsType:    FILE_TYPE_PUT,
-			localPath:  localPath,
-			remoteKey:  s3Key,
-			size:       info.Size(),
-			blockSize:  pb.blockSize,
-			blockCount: blockCount,
+			S3Client:   pb.getS3Client(),
+			Sts:        pb.getStsInfo(),
+			Bucket:     pb.bucket,
+			Type:       FILE_TYPE_PUT,
+			LocalFile:  localPath,
+			ObjectKey:  s3Key,
+			LocalSize:  info.Size(),
+			BlockSize:  pb.blockSize,
+			BlockCount: blockCount,
+			Stats:      BSTATE_FAIL,
 		}
 
 		if options.DryRun {
@@ -213,21 +298,21 @@ func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string
 		}
 
 		for _, object := range result.Contents {
-
 			relKey, _ := filepath.Rel(prefix, *object.Key)
 			localFile := utils.MergePath(folder, relKey)
 			utils.EnsureParentDir(localFile)
 			blockCount := (*object.Size + pb.blockSize - 1) / pb.blockSize
 			fileTask := &FileTask{
-				s3Client:   pb.getS3Client(),
-				stsInfo:    pb.getStsInfo(),
-				bucket:     pb.bucket,
-				opsType:    FILE_TYPE_GET,
-				localPath:  localFile,
-				remoteKey:  *object.Key,
-				size:       *object.Size,
-				blockSize:  pb.blockSize,
-				blockCount: blockCount,
+				S3Client:   pb.getS3Client(),
+				Sts:        pb.getStsInfo(),
+				Bucket:     pb.bucket,
+				Type:       FILE_TYPE_GET,
+				LocalFile:  localFile,
+				ObjectKey:  *object.Key,
+				LocalSize:  *object.Size,
+				BlockSize:  pb.blockSize,
+				BlockCount: blockCount,
+				Stats:      BSTATE_FAIL,
 			}
 			if options.DryRun {
 				log.Printf("will get %s from %s%s", localFile, pb.bucket, *object.Key)
@@ -249,59 +334,6 @@ func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string
 		WithField("BlockStats", GetOptions(ctx).BlockStats).
 		WithField("FileStats", GetOptions(ctx).FileStats).
 		Infoln("sync prefix to folder done")
-	return err
-}
-
-func (pb *PBucket) Put(ctx context.Context, localPath, objectKey string) error {
-	fileInfo, err := os.Stat(localPath)
-	if err != nil {
-		log.WithError(err).WithField("localPath", localPath).
-			Errorln("failed to open file")
-		return err
-	}
-	blockCount := (fileInfo.Size() + pb.blockSize - 1) / pb.blockSize
-	fileTask := &FileTask{
-		s3Client:   pb.getS3Client(),
-		stsInfo:    pb.getStsInfo(),
-		bucket:     pb.bucket,
-		opsType:    FILE_TYPE_PUT,
-		localPath:  localPath,
-		remoteKey:  objectKey,
-		size:       fileInfo.Size(),
-		blockSize:  pb.blockSize,
-		blockCount: blockCount,
-	}
-	fileMgr := NewSingleFileManager(pb)
-	err = fileMgr.PutFile(ctx, fileTask)
-	return err
-}
-
-func (pb *PBucket) Get(ctx context.Context, objectKey, localPath string) error {
-	resp, err := HeadObject(pb.getS3Client(), pb.getStsInfo().BucketName, objectKey)
-	if err != nil {
-		log.WithError(err).WithField("key", objectKey).Errorln("failed to head object")
-		return err
-	}
-	if *resp.ContentLength == 0 {
-		return fmt.Errorf("object size is 0")
-	}
-	fileSize := *resp.ContentLength
-
-	blockCount := (fileSize + pb.blockSize - 1) / pb.blockSize
-	fileTask := &FileTask{
-		s3Client:   pb.getS3Client(),
-		stsInfo:    pb.getStsInfo(),
-		bucket:     pb.bucket,
-		metadata:   resp.Metadata,
-		opsType:    FILE_TYPE_GET,
-		localPath:  localPath,
-		remoteKey:  objectKey,
-		size:       fileSize,
-		blockSize:  pb.blockSize,
-		blockCount: blockCount,
-	}
-	fileMgr := NewSingleFileManager(pb)
-	err = fileMgr.GetFile(ctx, fileTask)
 	return err
 }
 
@@ -347,7 +379,7 @@ func (pb *PBucket) newS3ClientManager() (*S3ClientManager, error) {
 	// create S3Client
 	s3Client, err := NewS3ClientWithSTS(context.TODO(), newRouter.GetStsInfo())
 	if err != nil {
-		log.WithError(err).Errorln("failed to create S3 bucket")
+		log.WithError(err).Errorln("failed to create S3 Bucket")
 		return nil, err
 	}
 
@@ -363,8 +395,8 @@ func (pb *PBucket) newS3ClientManager() (*S3ClientManager, error) {
 func (pb *PBucket) getS3ClientMgr() *S3ClientManager {
 	s3ClientMgr := (*S3ClientManager)(atomic.LoadPointer(&pb.s3ClientMgrPtr))
 	if s3ClientMgr == nil || s3ClientMgr.IsExpired() {
-		if atomic.CompareAndSwapInt32(&pb.S3ClientMgrUpdating, 0, 1) {
-			defer atomic.StoreInt32(&pb.S3ClientMgrUpdating, 0)
+		if atomic.CompareAndSwapInt32(&pb.s3ClientMgrUpdating, 0, 1) {
+			defer atomic.StoreInt32(&pb.s3ClientMgrUpdating, 0)
 			// the first thread reset the S3Client
 			newS3ClientMgr, err := pb.newS3ClientManager()
 			if err != nil {
