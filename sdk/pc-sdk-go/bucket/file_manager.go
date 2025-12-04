@@ -114,7 +114,7 @@ func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
 	var uploadID *string = nil
 	if options.SkipExisting {
 		err := m.headObject(ctx, fileTask)
-		if err != nil {
+		if err == nil {
 			fileTask.Stats = FSTATE_OK_SKIP_EXIST
 			if options.DebugMode {
 				log.WithField("key", fileTask.ObjectKey).Infoln("the remote key is existing")

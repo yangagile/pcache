@@ -134,8 +134,8 @@ func (s *FileStats) Update(f *FileTask) {
 }
 
 func (s FileStats) String() string {
-	return fmt.Sprintf("Count(total:%d ok:%d fail:%d) LocalSize(total:%d avg:%d max:%d min:%d)bytes "+
-		"Time(avg:%d max:%d min:%d)ms", s.CountTotal, s.CountOk, s.CountFail,
+	return fmt.Sprintf("Count(total:%d ok:%d fail:%d skip:%d) LocalSize(total:%d avg:%d max:%d min:%d)bytes "+
+		"Time(avg:%d max:%d min:%d)ms", s.CountTotal, s.CountOk, s.CountFail, s.CountSkipExisting+s.CountSkipUnchanged,
 		s.SizeTotal, s.GetAverageSize(), s.SizeMax, s.SizeMin, s.GetAverageTime(), s.TimeMax, s.TimeMin)
 }
 

@@ -221,6 +221,7 @@ func (pb *PBucket) HeadObject(ctx context.Context, objectKey string) (*s3.HeadOb
 
 func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string) error {
 	options := GetOptions(ctx)
+	startTime := time.Now().UnixMilli()
 	fileMgr := NewFileManager(pb, pb.fileThreadNumber)
 	err := filepath.Walk(folder, func(localPath string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -275,12 +276,14 @@ func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string
 	log.WithField("folder", folder).WithField("prefix", prefix).
 		WithField("BlockStats", GetOptions(ctx).BlockStats).
 		WithField("FileStats", GetOptions(ctx).FileStats).
-		Infoln("sync folder to prefix done")
+		WithField("TotalTime(ms)", time.Now().UnixMilli()-startTime).
+		Infoln("sync folder to prefix done!")
 	return err
 }
 
 func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string) error {
 	options := GetOptions(ctx)
+	startTime := time.Now().UnixMilli()
 	fileMgr := NewFileManager(pb, pb.fileThreadNumber)
 	var err error
 	var continuationToken *string
@@ -333,6 +336,7 @@ func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string
 	log.WithField("prefix", prefix).WithField("folder", folder).
 		WithField("BlockStats", GetOptions(ctx).BlockStats).
 		WithField("FileStats", GetOptions(ctx).FileStats).
+		WithField("TotalTime(ms)", time.Now().UnixMilli()-startTime).
 		Infoln("sync prefix to folder done")
 	return err
 }

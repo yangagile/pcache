@@ -30,7 +30,7 @@ var testRootLocal = "~/tmp/pbucket_test/" // will use os.TempDir()
 var pmsUrl = "http://127.0.0.1:8080"
 var ak = "unittest"
 var sk = "3ewGHUIayI8cZ8qgAkoJ31gXvGqAzKmmsTLqMhTrhyM="
-var bucket = "test-minio"
+var bucket = "pbucket-name"
 
 func TestMain(m *testing.M) {
 	setup()
@@ -215,9 +215,19 @@ func Test_syncFolder(t *testing.T) {
 	}
 
 	folder := utils.MergePath(testRootLocal, utils.GetCurrentFunctionName())
-	fileSize := int64(10 * 1024 * 1024) // 10MB
-	_, err = utils.CreateTestFile(folder, "/f1", fileSize)
-	_, err = utils.CreateTestFile(folder, "/f2", fileSize)
+
+	// clean source
+	err = utils.CleanDirFromTempDir(folder)
+	if err != nil {
+		panic(fmt.Errorf("failed to delete test root path %v: %v", testRootLocal, err))
+	}
+
+	// create new
+	fileSize := int64(1 * 1024) // 10MB
+	fileNumber := 10
+	for i := 0; i < fileNumber; i++ {
+		_, err = utils.CreateTestFile(folder, fmt.Sprintf("f_%05d.dat", i), fileSize)
+	}
 	prefix := utils.MergePath(testRootPrefix, utils.GetCurrentFunctionName())
 
 	// sync to Bucket from local
@@ -225,11 +235,11 @@ func Test_syncFolder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to sync folder:%v to prefix:%v", folder, prefix)
 	}
-	if GetOptions(ctx).FileStats.CountOk != 2 {
+	if GetOptions(ctx).FileStats.CountOk != int64(fileNumber) {
 		t.Fatalf("failed to sync folder:%v to prefix:%v", folder, prefix)
 	}
 
-	// clean source
+	//clean source
 	err = utils.CleanDirFromTempDir(testRootLocal)
 	if err != nil {
 		panic(fmt.Errorf("failed to delete test root path %v: %v", testRootLocal, err))
@@ -237,12 +247,11 @@ func Test_syncFolder(t *testing.T) {
 
 	// sync back to local from Bucket
 	ctx = WithOptions(context.Background())
-	GetOptions(ctx).DebugMode = false
 	err = pb.SyncPrefixToFolder(ctx, prefix, folder)
 	if err != nil {
 		t.Fatalf("failed to sync prefix:%v to folder:%v ", prefix, folder)
 	}
-	if GetOptions(ctx).FileStats.CountOk != 2 {
+	if GetOptions(ctx).FileStats.CountOk != int64(fileNumber) {
 		t.Fatalf("failed to sync prefix:%v to folder:%v ", prefix, folder)
 	}
 }

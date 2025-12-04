@@ -33,3 +33,25 @@ sk=KWBTBJJZTmZWb1F00lK1psg+2RMvRApY5uSDt7u1wpg=
 ./pcmd sync s3://test-minio/test/pcom/sync/meta /tmp/meta1 
 
 ```
+## more options from command "pcmd help sync"
+```
+$ ./pcmd help sync
+Command: sync
+Description: sync between local folder and bucket prefix
+Usage: app pcmd sync [FLAGS] folder s3://bucket/prefix | s3://bucket/prefix folder
+Options:
+  -checksum string
+    	checksum file for verify or compare, crc32 or md5
+  -debug
+    	debug mode
+  -dry
+    	dry run mode
+  -skip-existing
+    	skip existing file or object
+  -skip-unchanged
+    	skip unchanged file or object with size for checksum
+  -small-file
+    	size is less than block size, will take special method for performance.
+
+
+```
