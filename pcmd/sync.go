@@ -89,6 +89,9 @@ func handleSync(config *Config, args []string) error {
 	options.DryRun = config.DryRun
 	options.DebugMode = config.Debug
 	options.IsSmallFile = config.IsSmallFile
+	options.SkipExisting = config.SkipUnchanged
+	options.Checksum = config.Checksum
+	options.SkipUnchanged = config.SkipUnchanged
 	if upload {
 		pb, err := bucket.NewPBucket(ctx, config.Endpoint, objectInfo.Bucket,
 			config.AK, config.SK, []string{"PutObject"})
