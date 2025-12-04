@@ -161,7 +161,7 @@ func (pb *PBucket) PutObject(ctx context.Context, localPath, objectKey string) (
 		return nil, err
 	}
 	Etag := "cached"
-	if fileTask.ETag == nil {
+	if fileTask.ETag != nil {
 		Etag = *fileTask.ETag
 	}
 	return &s3.PutObjectOutput{
@@ -187,7 +187,7 @@ func (pb *PBucket) GetObject(ctx context.Context, objectKey, localPath string) (
 		return nil, err
 	}
 	Etag := "cached"
-	if fileTask.ETag == nil {
+	if fileTask.ETag != nil {
 		Etag = *fileTask.ETag
 	}
 	return &s3.GetObjectOutput{

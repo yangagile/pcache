@@ -31,17 +31,23 @@ import (
 func CreateSyncCommand(config *Config) *Command {
 	syncCmd := &Command{
 		Name:        "sync",
-		Description: "sync a local folder into bucket prefix or revert",
-		Usage:       "pcmd sync [FLAGS] folder s3://BUCKET/prefix or s3://BUCKET/prefix folder ",
+		Description: "sync between local folder and bucket prefix",
+		Usage:       "pcmd sync [FLAGS] folder s3://bucket/prefix | s3://bucket/prefix folder",
 		Handler:     handleSync,
 	}
 	syncCmd.Flags = flag.NewFlagSet("sync", flag.ExitOnError)
-	syncCmd.Flags.BoolVar(&config.ForceReplace, "force",
-		config.ForceReplace, "force overwrite of existing file")
 	syncCmd.Flags.BoolVar(&config.DryRun, "dry",
 		config.DryRun, "dry run mode")
 	syncCmd.Flags.BoolVar(&config.Debug, "debug",
 		config.Debug, "debug mode")
+	syncCmd.Flags.BoolVar(&config.IsSmallFile, "small-file",
+		config.IsSmallFile, "size is less than block size, will take special method for performance.")
+	syncCmd.Flags.BoolVar(&config.SkipExisting, "skip-existing",
+		config.IsSmallFile, "skip existing file or object")
+	syncCmd.Flags.BoolVar(&config.SkipUnchanged, "skip-unchanged",
+		config.SkipUnchanged, "skip unchanged file or object with size for checksum")
+	syncCmd.Flags.StringVar(&config.Checksum, "checksum",
+		config.Checksum, "checksum file for verify or compare, crc32 or md5")
 
 	return syncCmd
 }
@@ -79,8 +85,10 @@ func handleSync(config *Config, args []string) error {
 		return err
 	}
 	ctx := bucket.WithOptions(context.Background())
-	bucket.GetOptions(ctx).DryRun = config.DryRun
-	bucket.GetOptions(ctx).DebugMode = config.Debug
+	options := bucket.GetOptions(ctx)
+	options.DryRun = config.DryRun
+	options.DebugMode = config.Debug
+	options.IsSmallFile = config.IsSmallFile
 	if upload {
 		pb, err := bucket.NewPBucket(ctx, config.Endpoint, objectInfo.Bucket,
 			config.AK, config.SK, []string{"PutObject"})
@@ -105,8 +113,5 @@ func handleSync(config *Config, args []string) error {
 		}
 		fmt.Printf("successfully sync %s to local flolder %s\n", s3key, localFolder)
 	}
-	fmt.Printf("FileStats: %s BlockStats: %s\n",
-		bucket.GetOptions(ctx).FileStats, bucket.GetOptions(ctx).BlockStats)
-
 	return nil
 }

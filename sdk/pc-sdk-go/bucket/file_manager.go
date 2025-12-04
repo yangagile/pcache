@@ -112,7 +112,7 @@ func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
 
 	options := GetOptions(ctx)
 	var uploadID *string = nil
-	if options.skipExisting {
+	if options.SkipExisting {
 		err := m.headObject(ctx, fileTask)
 		if err != nil {
 			fileTask.Stats = FSTATE_OK_SKIP_EXIST
@@ -122,7 +122,7 @@ func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
 			return nil
 		}
 	}
-	if options.skipUnchanged {
+	if options.SkipUnchanged {
 		same, err := m.diffFile2Object(ctx, fileTask)
 		if err != nil {
 			log.WithError(err).WithField("LocalFile", fileTask.LocalFile).
@@ -245,14 +245,19 @@ func (m *FileManager) GetFile(ctx context.Context, fileTask *FileTask) error {
 	defer m.updateFState(ctx, startTime, fileTask)
 	options := GetOptions(ctx)
 	if fileTask.BlockCount == 0 {
-		err := m.headObject(ctx, fileTask)
-		if err != nil {
-			log.WithError(err).WithField("ObjectKey", fileTask.ObjectKey).
-				Errorln("failed to head remote object")
-			return err
+		if options.IsSmallFile {
+			// for small file don't call head object for better performance.
+			fileTask.BlockCount = 1
+		} else {
+			err := m.headObject(ctx, fileTask)
+			if err != nil {
+				log.WithError(err).WithField("ObjectKey", fileTask.ObjectKey).
+					Errorln("failed to head remote object")
+				return err
+			}
 		}
 	}
-	if options.skipExisting {
+	if options.SkipExisting {
 		_, err := os.Stat(fileTask.LocalFile)
 		if err == nil {
 			fileTask.Stats = FSTATE_OK_SKIP_EXIST
@@ -262,7 +267,7 @@ func (m *FileManager) GetFile(ctx context.Context, fileTask *FileTask) error {
 			return nil
 		}
 	}
-	if options.skipUnchanged {
+	if options.SkipUnchanged {
 		_, err := os.Stat(fileTask.LocalFile)
 		// 如果错误为 nil，表示文件存在；如果错误为 os.ErrNotExist，表示文件不存在
 		if err == nil {

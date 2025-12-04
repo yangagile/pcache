@@ -21,22 +21,29 @@ import (
 	"flag"
 	"fmt"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/bucket"
-	"os"
 	"pcmd/utils"
 )
 
 // RegisterCalcCommand registers the calculation command
 func CreateGetCommand(config *Config) *Command {
-	putCmd := &Command{
+	getCmd := &Command{
 		Name:        "get",
-		Description: "Get file from bucket to local file",
-		Usage:       "pcmd get s3://BUCKET/OBJECT LOCAL_FILE",
+		Description: "get file from bucket to local file",
+		Usage:       "pcmd get  [FLAGS] s3://bucket/object file",
 		Handler:     handleGet,
 	}
-	putCmd.Flags = flag.NewFlagSet("get", flag.ExitOnError)
-	putCmd.Flags.BoolVar(&config.ForceReplace, "force",
-		config.ForceReplace, "force overwrite of existing file")
-	return putCmd
+	getCmd.Flags = flag.NewFlagSet("get", flag.ExitOnError)
+	getCmd.Flags.BoolVar(&config.Debug, "debug",
+		config.Debug, "debug mode")
+	getCmd.Flags.BoolVar(&config.IsSmallFile, "small-file",
+		config.IsSmallFile, "size is less than block size, will take special method for performance.")
+	getCmd.Flags.BoolVar(&config.SkipExisting, "skip-existing",
+		config.IsSmallFile, "skip existing file or object")
+	getCmd.Flags.BoolVar(&config.SkipUnchanged, "skip-unchanged",
+		config.SkipUnchanged, "skip unchanged file or object with size for checksum")
+	getCmd.Flags.StringVar(&config.Checksum, "checksum",
+		config.Checksum, "checksum file for verify or compare, crc32 or md5")
+	return getCmd
 }
 
 func handleGet(config *Config, args []string) error {
@@ -44,11 +51,6 @@ func handleGet(config *Config, args []string) error {
 		return fmt.Errorf("source local file and target s3 path are required")
 	}
 	localFile := args[1]
-	_, err := os.Stat(localFile)
-	if err == nil && !config.ForceReplace {
-		fmt.Printf("local file %s is alread existing!\n", localFile)
-		return err
-	}
 	s3Key := args[0]
 	objectInfo, err := utils.ParseObjectInfo(s3Key)
 	if err != nil {
@@ -63,7 +65,7 @@ func handleGet(config *Config, args []string) error {
 		fmt.Printf("failed to new PBucket with err:%v\n", err)
 	}
 
-	err = pb.Get(ctx, objectInfo.Key, localFile)
+	_, err = pb.GetObject(ctx, objectInfo.Key, localFile)
 	if err != nil {
 		fmt.Printf("failed to get %s to local file %s with err:%v\n", s3Key, localFile, err)
 	}

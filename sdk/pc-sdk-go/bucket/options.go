@@ -25,8 +25,8 @@ type Options struct {
 	DebugMode     bool
 	EnableStats   bool
 	IsSmallFile   bool // LocalSize is less than block LocalSize, will take special method for performance
-	skipExisting  bool // if the local file or remote object is existing, not replace.
-	skipUnchanged bool // if the local file  remote object is same, not replace.
+	SkipExisting  bool // if the local file or remote object is existing, not replace.
+	SkipUnchanged bool // if the local file  remote object is same, not replace.
 	Checksum      string
 	BlockStats    *BlockStats
 	FileStats     *FileStats
@@ -38,8 +38,8 @@ func NewOptions() *Options {
 		DebugMode:     false,
 		EnableStats:   true,
 		IsSmallFile:   false,
-		skipExisting:  false,
-		skipUnchanged: false,
+		SkipExisting:  false,
+		SkipUnchanged: false,
 		Checksum:      "",
 		BlockStats:    NewBlockStats(),
 		FileStats:     NewFileStats(),

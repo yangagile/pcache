@@ -135,7 +135,7 @@ func Test_PutGet_SmallFileFromPcp(t *testing.T) {
 	}
 
 	// test skip existing key for put
-	GetOptions(ctx).skipExisting = true
+	GetOptions(ctx).SkipExisting = true
 	_, err = pb.PutObject(ctx, localFilePath, fileKey)
 	if err != nil {
 		t.Fatalf("failed to file:%v with err:%v", fileName, err)
@@ -158,7 +158,7 @@ func Test_PutGet_SmallFileFromPcp(t *testing.T) {
 
 	// test skip to get if local file is existing
 	ctx = WithOptions(context.Background())
-	GetOptions(ctx).skipExisting = true
+	GetOptions(ctx).SkipExisting = true
 	_, err = pb.GetObject(ctx, fileKey, downloadPath)
 	if err != nil {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
@@ -321,7 +321,7 @@ func Test__SkipUnchanged(t *testing.T) {
 	}
 
 	// enable skip unchanged optong
-	GetOptions(ctx).skipUnchanged = true
+	GetOptions(ctx).SkipUnchanged = true
 
 	// put same file again, check with file size
 	GetOptions(ctx).FileStats.Reset()
@@ -335,7 +335,7 @@ func Test__SkipUnchanged(t *testing.T) {
 	}
 
 	// disable skip unchanged and put file again with checksum
-	GetOptions(ctx).skipUnchanged = false
+	GetOptions(ctx).SkipUnchanged = false
 	GetOptions(ctx).Checksum = "md5"
 	// first put file
 	_, err = pb.PutObject(ctx, localFilePath, fileKey)
@@ -344,7 +344,7 @@ func Test__SkipUnchanged(t *testing.T) {
 	}
 
 	// enable skip unchanged and put agian
-	GetOptions(ctx).skipUnchanged = true
+	GetOptions(ctx).SkipUnchanged = true
 	GetOptions(ctx).FileStats.Reset()
 	_, err = pb.PutObject(ctx, localFilePath, fileKey)
 	if err != nil {
@@ -357,7 +357,7 @@ func Test__SkipUnchanged(t *testing.T) {
 
 	// get file with checksum enabled
 	ctx = WithOptions(context.Background())
-	GetOptions(ctx).skipUnchanged = true
+	GetOptions(ctx).SkipUnchanged = true
 	GetOptions(ctx).Checksum = "md5"
 
 	_, err = pb.GetObject(ctx, fileKey, localFilePath)
@@ -379,5 +379,37 @@ func Test__SkipUnchanged(t *testing.T) {
 	fstat = GetOptions(ctx).FileStats
 	if fstat.CountSkipUnchanged != 1 {
 		t.Fatalf("failed to put from PCP disk")
+	}
+}
+
+func Test_PutGet_SmallFileOption(t *testing.T) {
+	ctx := WithOptions(context.Background())
+	pb, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
+	if err != nil {
+		t.Fatalf("failed to create pb: %v", err)
+	}
+
+	fileName := utils.GetCurrentFunctionName()
+	fileSize := int64(1024)
+	localFilePath, err := utils.CreateTestFile(testRootLocal, fileName, fileSize)
+	if err != nil {
+		t.Fatalf("failed to create local file:%v with err:%v", localFilePath, err)
+	}
+	fileKey := testRootPrefix + fileName
+	downloadPath := testRootLocal + fileName
+
+	// put file
+	_, err = pb.PutObject(ctx, localFilePath, fileKey)
+	if err != nil {
+		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
+	}
+
+	// tag as small file, make sure the size is less block size.
+	// get file
+	ctx = WithOptions(context.Background())
+	GetOptions(ctx).IsSmallFile = true
+	_, err = pb.GetObject(ctx, fileKey, downloadPath)
+	if err != nil {
+		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
 	}
 }

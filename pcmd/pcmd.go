@@ -120,7 +120,7 @@ func showHelp() {
 
 	fmt.Println()
 	fmt.Println("Use 'pcmd help <command>' to view detailed command help")
-	fmt.Println("Use 'pcmd <command> -h' to view command options")
+	fmt.Println("Use 'pcmd -h <command>' to view command options")
 	fmt.Println()
 	fmt.Println("Global configuration is loaded from ~/.pcmd.cfg")
 }

@@ -25,22 +25,28 @@ import (
 )
 
 type Config struct {
-	Endpoint     string
-	AK           string
-	SK           string
-	ForceReplace bool
-	DryRun       bool
-	Debug        bool
+	Endpoint      string
+	AK            string
+	SK            string
+	DryRun        bool
+	Debug         bool // print detail log
+	IsSmallFile   bool // size is less than block size, will take special method for performance.
+	SkipExisting  bool // if the local file or remote object is existing, not replace.
+	SkipUnchanged bool // if the local file  remote object is same, not replace.
+	Checksum      string
 }
 
 func NewConfig() *Config {
 	cfg := Config{
-		Endpoint:     "",
-		AK:           "",
-		SK:           "",
-		ForceReplace: true,
-		DryRun:       false,
-		Debug:        false,
+		Endpoint:      "",
+		AK:            "",
+		SK:            "",
+		DryRun:        false,
+		Debug:         false,
+		IsSmallFile:   false,
+		SkipExisting:  false,
+		SkipUnchanged: false,
+		Checksum:      "",
 	}
 	cfg.loadConfig()
 	return &cfg

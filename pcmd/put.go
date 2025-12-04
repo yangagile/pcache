@@ -30,13 +30,22 @@ import (
 func CreatePutCommand(config *Config) *Command {
 	putCmd := &Command{
 		Name:        "put",
-		Description: "Put a local file into bucket",
-		Usage:       "pcmd put [FLAGS] FILE s3://BUCKET/KEY",
+		Description: "put a local file into bucket",
+		Usage:       "pcmd put  [FLAGS] file s3://bucket/object",
 		Handler:     handlePut,
 	}
 	putCmd.Flags = flag.NewFlagSet("put", flag.ExitOnError)
-	putCmd.Flags.BoolVar(&config.ForceReplace, "force",
-		config.ForceReplace, "force overwrite of existing file")
+	putCmd.Flags = flag.NewFlagSet("get", flag.ExitOnError)
+	putCmd.Flags.BoolVar(&config.Debug, "debug",
+		config.Debug, "debug mode")
+	putCmd.Flags.BoolVar(&config.IsSmallFile, "small-file",
+		config.IsSmallFile, "size is less than block size, will take special method for performance.")
+	putCmd.Flags.BoolVar(&config.SkipExisting, "skip-existing",
+		config.IsSmallFile, "skip existing file or object")
+	putCmd.Flags.BoolVar(&config.SkipUnchanged, "skip-unchanged",
+		config.SkipUnchanged, "skip unchanged file or object with size for checksum")
+	putCmd.Flags.StringVar(&config.Checksum, "checksum",
+		config.Checksum, "checksum file for verify or compare, crc32 or md5")
 
 	return putCmd
 }
@@ -65,7 +74,7 @@ func handlePut(config *Config, args []string) error {
 		fmt.Printf("failed to new PBucket with err:%v\n", err)
 	}
 
-	err = pb.Put(ctx, localFile, objectInfo.Key)
+	_, err = pb.PutObject(ctx, localFile, objectInfo.Key)
 	if err != nil {
 		fmt.Printf("failed to put local file %s to %s with err:%v\n", localFile, s3Key, err)
 	}
