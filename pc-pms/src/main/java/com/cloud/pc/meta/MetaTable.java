@@ -94,7 +94,11 @@ public class MetaTable {
 
     @JsonIgnore
     public PcMeta get(String key) {
-        return items.get(keyMap.get(key));
+        Integer i = keyMap.get(key);
+        if (i != null) {
+            return items.get(keyMap.get(key));
+        }
+        return null;
     }
     private int getId() {
         int id = 0;

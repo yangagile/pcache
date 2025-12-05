@@ -95,6 +95,10 @@ public class PBucketService {
     public RoutingResult applySts(String bucket, String path, List<PcPermission> permissions,
         int expirationInSeconds) {
         PBucket pb = metaService.getPBucketInfo(bucket);
+        if (pb == null) {
+            LOG.error("{} No failed to get bucket={}", OpsTrace.get(), bucket);
+            throw new RuntimeException("No this pbucket:" + bucket);
+        }
         if (!checkPathWithPrefix(path, pb.getPrefix())) {
             LOG.error("{} No permission to access bucket={} path={}", OpsTrace.get(), bucket, path);
             throw new RuntimeException("No permission for the path");

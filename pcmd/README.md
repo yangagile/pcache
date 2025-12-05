@@ -17,20 +17,20 @@ sk=KWBTBJJZTmZWb1F00lK1psg+2RMvRApY5uSDt7u1wpg=
 ```
 ## run pcmd
 ```
-# for help
+// for help
 ./pcmd -h
 
-# put one local file to pbucket 'test-minio' with key "test/pcom/awscliv2.zip"
+// put one local file to pbucket 'test-minio' with key "test/pcom/awscliv2.zip"
 ./pcmd put /tmp/awscliv2.zip s3://test-minio/test/pcom/awscliv2.zip
 
-# get one local file form pbucket 'test-minio' wich key 'test/pcom/awscliv2.zip'
+// get one local file form pbucket 'test-minio' wich key 'test/pcom/awscliv2.zip'
 ./pcmd get /tmp/awscliv2.zip s3://test-minio/test/pcom/awscliv2.zip
 
-# sync local folder to pbucket 'test-minio' prefix 'test/pcom/sync/meta'
+// sync local folder '/tmp/meta' to pbucket 'test-minio' prefix 'test/pcom/sync/meta'
 ./pcmd sync /tmp/meta s3://test-minio/test/pcom/sync/meta
 
-# sync back
-./pcmd sync s3://test-minio/test/pcom/sync/meta /tmp/meta1 
+// sync pbucket 'test-minio' prefix 'test/pcom/sync/meta' to local folder '/tmp/meta'
+./pcmd sync s3://test-minio/test/pcom/sync/meta /tmp/meta
 
 ```
 ## more options from command "pcmd help sync"
@@ -52,6 +52,9 @@ Options:
     	skip unchanged file or object with size for checksum
   -small-file
     	size is less than block size, will take special method for performance.
-
+  -block-thead-number int
+    	thread number of block worker (default 8)
+  -file-thread-number int
+    	thread number of file worker (default 8)
 
 ```

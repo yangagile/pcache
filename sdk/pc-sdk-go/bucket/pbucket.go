@@ -55,7 +55,7 @@ type PBucket struct {
 	pcpMgrPtr               unsafe.Pointer // *PcpManager
 	pcpTtlSec               int64          // pcp Table duration time
 	pcpMgrUpdating          int32          // 1: PcpManager is updating
-	pcpMgrEnable            bool
+	pCacheEnable            bool
 	pmsMgr                  *PmsManager
 	secretMgr               *SecretManager
 	blockWorkerChanSize     int
@@ -97,7 +97,7 @@ func NewPBucketWithOptions(
 		blockSize:               BLOCK_SIZE_MIN,
 		groupNumber:             6,
 		path:                    "",
-		pcpMgrEnable:            true,
+		pCacheEnable:            true,
 		stsTtlSec:               STS_TTL_SEC,
 		permissions:             permissions,
 		blockWorkerChanSize:     BLOCK_WORKER_CHAN_SIZE_DEFAULT,
@@ -128,7 +128,7 @@ func NewPBucketWithOptions(
 	}
 
 	// init PCP manager
-	if pb.pcpMgrEnable {
+	if pb.pCacheEnable {
 		pcpTable, err := pb.getPcpTable("")
 		if err != nil {
 			log.WithError(err).WithField("pmsUrl", pmsUrl).Errorln("failed to init PCP manager")
@@ -185,7 +185,7 @@ func WithFileTaskThreadNumber(number int) Option {
 
 func WithBlockSize(size int64) Option {
 	return func(pb *PBucket) error {
-		if size <= BLOCK_SIZE_MIN {
+		if size < BLOCK_SIZE_MIN {
 			return fmt.Errorf("block size must be larger than 5MB")
 		}
 		pb.blockSize = size
@@ -213,16 +213,19 @@ func WithPcpTls(second int64) Option {
 	}
 }
 
+func WithPCacheEnable(pCacheEnable bool) Option {
+	return func(pb *PBucket) error {
+		pb.pCacheEnable = pCacheEnable
+		return nil
+	}
+}
+
 func (pb *PBucket) Close() {
 	pb.blockWorker.Close()
 }
 
 func (pb *PBucket) PrintInfo() string {
 	return fmt.Sprintf("Bucket: %s, path: %s", pb.bucket, pb.path)
-}
-
-func (pb *PBucket) EnablePCache(pcpEnable bool) {
-	pb.pcpMgrEnable = pcpEnable
 }
 
 func (pb *PBucket) PutObject(ctx context.Context, localPath, objectKey string) (*s3.PutObjectOutput, error) {
@@ -363,11 +366,11 @@ func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string
 		fileMgr.Wait()
 	}
 
-	log.WithField("folder", folder).WithField("prefix", prefix).
-		WithField("BlockStats", GetOptions(ctx).BlockStats).
-		WithField("FileStats", GetOptions(ctx).FileStats).
-		WithField("TotalTime(ms)", time.Now().UnixMilli()-startTime).
-		Infoln("sync folder to prefix done!")
+	baseInfo := fmt.Sprintf("successfully sync folder(%s) to prefix(%s)! duration(%dms) file-thread(%d) block-thread(%d).",
+		folder, prefix, time.Now().UnixMilli()-startTime, pb.fileTaskThreadNumber, pb.blockWorkerThreadNumber)
+	log.WithField("block-stats", GetOptions(ctx).BlockStats).
+		WithField("file-stats", GetOptions(ctx).FileStats).
+		Infoln(baseInfo)
 	return err
 }
 
@@ -423,17 +426,18 @@ func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string
 	if !options.DryRun {
 		fileMgr.Wait()
 	}
-	log.WithField("prefix", prefix).WithField("folder", folder).
-		WithField("BlockStats", GetOptions(ctx).BlockStats).
-		WithField("FileStats", GetOptions(ctx).FileStats).
-		WithField("TotalTime(ms)", time.Now().UnixMilli()-startTime).
-		Infoln("sync prefix to folder done")
+
+	baseInfo := fmt.Sprintf("successfully sync prefix(%s) to folder(%s)! duration(%dms) file-thread(%d) block-thread(%d).",
+		folder, prefix, time.Now().UnixMilli()-startTime, pb.fileTaskThreadNumber, pb.blockWorkerThreadNumber)
+	log.WithField("block-stats", GetOptions(ctx).BlockStats).
+		WithField("file-stats", GetOptions(ctx).FileStats).
+		Infoln(baseInfo)
 	return err
 }
 
 // below is private function
 func (pb *PBucket) getPcpHost(key string) string {
-	if !pb.pcpMgrEnable {
+	if !pb.pCacheEnable {
 		return ""
 	}
 	pcpMgr := (*PcpManager)(atomic.LoadPointer(&pb.pcpMgrPtr))

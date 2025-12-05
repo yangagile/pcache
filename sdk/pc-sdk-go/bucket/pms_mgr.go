@@ -20,6 +20,7 @@ import (
 	"context"
 	log "github.com/sirupsen/logrus"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
+	"strings"
 )
 
 const URL_PATH_STS = "/api/v1/pb/"
@@ -133,7 +134,9 @@ func (pm *PmsManager) interGetRoutingResult(bucket, path string, permission []st
 	var routing Router
 	err := utils.GetAndParseJSON(url, &allParams, header, &routing)
 	if err != nil {
-		pm.urlProve.ReportFail(url)
+		if strings.HasPrefix(err.Error(), "HTTP request failed") {
+			pm.urlProve.ReportFail(url)
+		}
 		return nil, err
 	}
 	return &routing, nil
@@ -170,7 +173,9 @@ func (pm *PmsManager) interGetPcpList(checksum string) (*utils.PcpTable, error) 
 	var pcpHashTable utils.PcpTable
 	err := utils.GetAndParseJSON(url, &allParams, header, &pcpHashTable)
 	if err != nil {
-		pm.urlProve.ReportFail(url)
+		if strings.HasPrefix(err.Error(), "HTTP request failed") {
+			pm.urlProve.ReportFail(url)
+		}
 		return nil, err
 	}
 	return &pcpHashTable, nil

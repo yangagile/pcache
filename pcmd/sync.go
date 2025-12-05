@@ -48,7 +48,10 @@ func CreateSyncCommand(config *Config) *Command {
 		config.SkipUnchanged, "skip unchanged file or object with size for checksum")
 	syncCmd.Flags.StringVar(&config.Checksum, "checksum",
 		config.Checksum, "checksum file for verify or compare, crc32 or md5")
-
+	syncCmd.Flags.IntVar(&config.BlockTheadNumber, "block-thead-number",
+		config.BlockTheadNumber, "thread number of block worker")
+	syncCmd.Flags.IntVar(&config.FileThreadNumber, "file-thread-number",
+		config.FileThreadNumber, "thread number of file worker")
 	return syncCmd
 }
 
@@ -93,26 +96,36 @@ func handleSync(config *Config, args []string) error {
 	options.Checksum = config.Checksum
 	options.SkipUnchanged = config.SkipUnchanged
 	if upload {
-		pb, err := bucket.NewPBucket(ctx, config.Endpoint, objectInfo.Bucket,
-			config.AK, config.SK, []string{"PutObject"})
+		pb, err := bucket.NewPBucketWithOptions(ctx, config.Endpoint, objectInfo.Bucket,
+			config.AK, config.SK, []string{"PutObject"},
+			//bucket.WithBlockSize(config.BlockSize),
+			bucket.WithBlockWorkerThreadNumber(config.BlockTheadNumber),
+			bucket.WithFileTaskThreadNumber(config.FileThreadNumber))
 		if err != nil {
 			fmt.Printf("failed to new PBucket with err:%v\n", err)
+			return err
 		}
 		err = pb.SyncFolderToPrefix(ctx, localFolder, objectInfo.Key)
 		if err != nil {
 			fmt.Printf("failed to put local file %s to %s with err:%v\n", localFolder, s3key, err)
+			return err
 		}
 
 		fmt.Printf("successfully sync local flolder %s to %s\n", localFolder, s3key)
 	} else {
-		pb, err := bucket.NewPBucket(ctx, config.Endpoint, objectInfo.Bucket,
-			config.AK, config.SK, []string{"GetObject,ListObject"})
+		pb, err := bucket.NewPBucketWithOptions(ctx, config.Endpoint, objectInfo.Bucket,
+			config.AK, config.SK, []string{"GetObject,ListObject"},
+			//bucket.WithBlockSize(config.BlockSize),
+			bucket.WithBlockWorkerThreadNumber(config.BlockTheadNumber),
+			bucket.WithFileTaskThreadNumber(config.FileThreadNumber))
 		if err != nil {
 			fmt.Printf("failed to new PBucket with err:%v\n", err)
+			return err
 		}
 		err = pb.SyncPrefixToFolder(ctx, objectInfo.Key, localFolder)
 		if err != nil {
 			fmt.Printf("failed to get local file %s from %s with err:%v\n", localFolder, s3key, err)
+			return err
 		}
 		fmt.Printf("successfully sync %s to local flolder %s\n", s3key, localFolder)
 	}

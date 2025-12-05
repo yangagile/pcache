@@ -70,14 +70,12 @@ func Test_PutGet_SmallFileFromLocal(t *testing.T) {
 	ctx := WithOptions(context.Background())
 
 	GetOptions(ctx).Checksum = "md5"
-	pb, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
+	pb, err := NewPBucketWithOptions(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"},
+		WithPCacheEnable(false))
 	if err != nil {
 		t.Fatalf("failed to create Bucket: %v", err)
 	}
 	defer pb.Close()
-
-	// disable PCache
-	pb.EnablePCache(false)
 
 	fileName := utils.GetCurrentFunctionName()
 	fileSize := int64(1024)
