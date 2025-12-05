@@ -30,56 +30,86 @@ import (
 	"unsafe"
 )
 
+type Option func(*PBucket) error
+
+const (
+	BLOCK_SIZE_MIN                     = 5 * 1024 * 1024 //5MB
+	BLOCK_WORKER_THREAD_NUMBER_DEFAULT = 8
+	BLOCK_WORKER_CHAN_SIZE_DEFAULT     = 128
+	FILE_TASK_THREAD_NUMBER_DEFAULT    = 8
+	STS_TTL_SEC                        = 1800
+	PCP_TTL_SEC                        = 60
+)
+
 type PBucket struct {
-	bucket              string
-	path                string
-	ak                  string
-	sk                  string
-	permissions         []string
-	blockSize           int64
-	groupNumber         int
-	stsTtlSec           int64          // sts duration time
-	s3ClientMgrPtr      unsafe.Pointer // *S3ClientManager
-	s3ClientMgrUpdating int32          // 1: S3ClientMgr is updating
-	pcpMgrPtr           unsafe.Pointer // *PcpManager
-	pcpMgrTtlSec        int64          // pcp Table duration time
-	pcpMgrUpdating      int32          // 1: PcpManager is updating
-	pcpMgrEnable        bool
-	pmsMgr              *PmsManager
-	secretMgr           *SecretManager
-	workerChanSize      int
-	blockWorker         *BlockWorker
-	workerThreadNumber  int
-	fileThreadNumber    int
+	bucket                  string
+	path                    string
+	ak                      string
+	sk                      string
+	permissions             []string
+	blockSize               int64
+	groupNumber             int
+	stsTtlSec               int64          // sts duration time
+	s3ClientMgrPtr          unsafe.Pointer // *S3ClientManager
+	s3ClientMgrUpdating     int32          // 1: S3ClientMgr is updating
+	pcpMgrPtr               unsafe.Pointer // *PcpManager
+	pcpTtlSec               int64          // pcp Table duration time
+	pcpMgrUpdating          int32          // 1: PcpManager is updating
+	pcpMgrEnable            bool
+	pmsMgr                  *PmsManager
+	secretMgr               *SecretManager
+	blockWorkerChanSize     int
+	blockWorker             *BlockWorker
+	blockWorkerThreadNumber int
+	fileTaskThreadNumber    int
 }
 
 func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions []string) (*PBucket, error) {
-	// check parameters
+	return NewPBucketWithOptions(ctx, pmsUrl, bucket, ak, sk, permissions)
+}
+
+func NewPBucketWithOptions(
+	ctx context.Context,
+	pmsUrl, bucket, ak, sk string,
+	permissions []string,
+	opts ...Option,
+) (*PBucket, error) {
+	// check required parameters
 	if pmsUrl == "" {
-		return nil, fmt.Errorf("pclient: missing pmsUrl")
+		return nil, fmt.Errorf("pclient: pmsUrl required")
 	}
 	if bucket == "" {
-		return nil, fmt.Errorf("pclient: missing Bucket")
+		return nil, fmt.Errorf("pclient: bucket name required")
 	}
 	if ak == "" || sk == "" {
 		return nil, fmt.Errorf("pclient: ak, sk required")
 	}
+	if permissions == nil || len(permissions) == 0 {
+		return nil, fmt.Errorf("pclient: permissions or permissions required")
+	}
 
 	// init config variables
 	pb := &PBucket{
-		bucket:             bucket,
-		ak:                 ak,
-		sk:                 sk,
-		pcpMgrTtlSec:       60,
-		blockSize:          5 * 1024 * 1024,
-		groupNumber:        6,
-		path:               "",
-		pcpMgrEnable:       true,
-		stsTtlSec:          500,
-		permissions:        permissions,
-		workerChanSize:     128,
-		workerThreadNumber: 8,
-		fileThreadNumber:   8,
+		bucket:                  bucket,
+		ak:                      ak,
+		sk:                      sk,
+		pcpTtlSec:               PCP_TTL_SEC,
+		blockSize:               BLOCK_SIZE_MIN,
+		groupNumber:             6,
+		path:                    "",
+		pcpMgrEnable:            true,
+		stsTtlSec:               STS_TTL_SEC,
+		permissions:             permissions,
+		blockWorkerChanSize:     BLOCK_WORKER_CHAN_SIZE_DEFAULT,
+		blockWorkerThreadNumber: BLOCK_WORKER_THREAD_NUMBER_DEFAULT,
+		fileTaskThreadNumber:    FILE_TASK_THREAD_NUMBER_DEFAULT,
+	}
+
+	// apply all options
+	for _, opt := range opts {
+		if err := opt(pb); err != nil {
+			return nil, fmt.Errorf("failed to apply option: %w", err)
+		}
 	}
 
 	// init user manager
@@ -104,7 +134,7 @@ func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions 
 			log.WithError(err).WithField("pmsUrl", pmsUrl).Errorln("failed to init PCP manager")
 			return nil, err
 		}
-		newPcpMgr := NewPcpManager(time.Now().Unix()+pb.pcpMgrTtlSec*1000, pcpTable)
+		newPcpMgr := NewPcpManager(time.Now().Unix()+pb.pcpTtlSec*1000, pcpTable)
 		atomic.StorePointer(&pb.pcpMgrPtr, unsafe.Pointer(newPcpMgr))
 	}
 
@@ -117,10 +147,70 @@ func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions 
 	atomic.StorePointer(&pb.s3ClientMgrPtr, unsafe.Pointer(s3ClientMgr))
 
 	// init block put/get worker threads
-	pb.blockWorker = NewBlockWorker(pb.workerThreadNumber, pb.workerChanSize)
+	pb.blockWorker = NewBlockWorker(pb.blockWorkerThreadNumber, pb.blockWorkerChanSize)
 	pb.blockWorker.Start()
 	log.WithField("Bucket info", pb.PrintInfo()).Infoln("create Bucket done")
 	return pb, nil
+}
+
+func WithBlockWorkerThreadNumber(number int) Option {
+	return func(pb *PBucket) error {
+		if number < 1 {
+			return fmt.Errorf("block worker thread number must be larger than 0")
+		}
+		pb.blockWorkerThreadNumber = number
+		return nil
+	}
+}
+
+func WithBlockWorkerChanSize(size int) Option {
+	return func(pb *PBucket) error {
+		if size < 1 {
+			return fmt.Errorf("block worker thread number must be larger than 0")
+		}
+		pb.blockWorkerChanSize = size
+		return nil
+	}
+}
+
+func WithFileTaskThreadNumber(number int) Option {
+	return func(pb *PBucket) error {
+		if number < 1 {
+			return fmt.Errorf("file task thread number must be larger than 0")
+		}
+		pb.fileTaskThreadNumber = number
+		return nil
+	}
+}
+
+func WithBlockSize(size int64) Option {
+	return func(pb *PBucket) error {
+		if size <= BLOCK_SIZE_MIN {
+			return fmt.Errorf("block size must be larger than 5MB")
+		}
+		pb.blockSize = size
+		return nil
+	}
+}
+
+func WithStsTls(second int64) Option {
+	return func(pb *PBucket) error {
+		if second < 900 {
+			return fmt.Errorf("file task thread number must be larger than 900")
+		}
+		pb.stsTtlSec = second
+		return nil
+	}
+}
+
+func WithPcpTls(second int64) Option {
+	return func(pb *PBucket) error {
+		if second < 10 {
+			return fmt.Errorf("file task thread number must be larger than 10")
+		}
+		pb.pcpTtlSec = second
+		return nil
+	}
 }
 
 func (pb *PBucket) Close() {
@@ -222,7 +312,7 @@ func (pb *PBucket) HeadObject(ctx context.Context, objectKey string) (*s3.HeadOb
 func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string) error {
 	options := GetOptions(ctx)
 	startTime := time.Now().UnixMilli()
-	fileMgr := NewFileManager(pb, pb.fileThreadNumber)
+	fileMgr := NewFileManager(pb, pb.fileTaskThreadNumber)
 	err := filepath.Walk(folder, func(localPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			log.Printf("failed to access folder %s: %v", localPath, err)
@@ -284,7 +374,7 @@ func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string
 func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string) error {
 	options := GetOptions(ctx)
 	startTime := time.Now().UnixMilli()
-	fileMgr := NewFileManager(pb, pb.fileThreadNumber)
+	fileMgr := NewFileManager(pb, pb.fileTaskThreadNumber)
 	var err error
 	var continuationToken *string
 	for {
@@ -359,11 +449,11 @@ func (pb *PBucket) getPcpHost(key string) string {
 			}
 			// no changes, just update the time
 			if pcpTable.Checksum == pcpMgr.Checksum {
-				pcpMgr.expiredTime = time.Now().Unix() + pb.pcpMgrTtlSec*1000
+				pcpMgr.expiredTime = time.Now().Unix() + pb.pcpTtlSec*1000
 				return pcpMgr.get(key)
 			}
 			// update new PCP m
-			newPcpMgr := NewPcpManager(time.Now().Unix()+pb.pcpMgrTtlSec*1000, pcpTable)
+			newPcpMgr := NewPcpManager(time.Now().Unix()+pb.pcpTtlSec*1000, pcpTable)
 			atomic.StorePointer(&pb.pcpMgrPtr, unsafe.Pointer(newPcpMgr))
 			return newPcpMgr.get(key)
 		}

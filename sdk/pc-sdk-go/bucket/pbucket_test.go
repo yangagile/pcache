@@ -70,13 +70,14 @@ func Test_PutGet_SmallFileFromLocal(t *testing.T) {
 	ctx := WithOptions(context.Background())
 
 	GetOptions(ctx).Checksum = "md5"
-	bucket, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
+	pb, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
 	if err != nil {
 		t.Fatalf("failed to create Bucket: %v", err)
 	}
+	defer pb.Close()
 
 	// disable PCache
-	bucket.EnablePCache(false)
+	pb.EnablePCache(false)
 
 	fileName := utils.GetCurrentFunctionName()
 	fileSize := int64(1024)
@@ -87,7 +88,7 @@ func Test_PutGet_SmallFileFromLocal(t *testing.T) {
 	fileKey := testRootPrefix + fileName
 	downloadPath := testRootLocal + fileName
 
-	_, err = bucket.PutObject(ctx, localFilePath, fileKey)
+	_, err = pb.PutObject(ctx, localFilePath, fileKey)
 	if err != nil {
 		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
 	}
@@ -97,7 +98,7 @@ func Test_PutGet_SmallFileFromLocal(t *testing.T) {
 	}
 	ctx = WithOptions(context.Background())
 	GetOptions(ctx).Checksum = "md5"
-	_, err = bucket.GetObject(ctx, fileKey, downloadPath)
+	_, err = pb.GetObject(ctx, fileKey, downloadPath)
 	if err != nil {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
 	}
@@ -114,6 +115,7 @@ func Test_PutGet_SmallFileFromPcp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pb: %v", err)
 	}
+	defer pb.Close()
 
 	fileName := utils.GetCurrentFunctionName()
 	fileSize := int64(1024)
@@ -141,7 +143,7 @@ func Test_PutGet_SmallFileFromPcp(t *testing.T) {
 		t.Fatalf("failed to file:%v with err:%v", fileName, err)
 	}
 	fstats := GetOptions(ctx).FileStats
-	if fstats.CountSkipExisting == 1 {
+	if fstats.CountSkipExisting != 1 {
 		t.Fatalf("failed to skip existing key")
 	}
 
@@ -175,6 +177,7 @@ func Test_PutWithPCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to new PBucket with err:%v", err)
 	}
+	defer pb.Close()
 
 	// test put file to PCP
 	fileName := utils.GetCurrentFunctionName()
@@ -213,6 +216,7 @@ func Test_syncFolder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to new PBucket with err:%v", err)
 	}
+	defer pb.Close()
 
 	folder := utils.MergePath(testRootLocal, utils.GetCurrentFunctionName())
 
@@ -259,10 +263,11 @@ func Test_syncFolder(t *testing.T) {
 func Test__Delete(t *testing.T) {
 	ctx := WithOptions(context.Background())
 
-	bucket, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject,DeleteObject"})
+	pb, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject,DeleteObject"})
 	if err != nil {
 		t.Fatalf("failed to create Bucket: %v", err)
 	}
+	defer pb.Close()
 
 	fileName := utils.GetCurrentFunctionName()
 	fileSize := int64(1024)
@@ -273,25 +278,25 @@ func Test__Delete(t *testing.T) {
 	fileKey := testRootPrefix + fileName
 
 	// delete not existing object will return nil
-	_, err = bucket.DeleteObject(ctx, fileKey+"no_this_key_wosldfsafa")
+	_, err = pb.DeleteObject(ctx, fileKey+"no_this_key_wosldfsafa")
 	if err != nil {
 		t.Fatalf("failed to delete object key:%v with err:%v", fileKey, err)
 	}
 
 	// put a object
-	_, err = bucket.PutObject(ctx, localFilePath, fileKey)
+	_, err = pb.PutObject(ctx, localFilePath, fileKey)
 	if err != nil {
 		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
 	}
 
 	// delete the object
-	_, err = bucket.DeleteObject(ctx, fileKey)
+	_, err = pb.DeleteObject(ctx, fileKey)
 	if err != nil {
 		t.Fatalf("failed to delete object key:%v with err:%v", fileKey, err)
 	}
 
 	// the object should not exist
-	_, err = bucket.HeadObject(ctx, fileKey)
+	_, err = pb.HeadObject(ctx, fileKey)
 	if err == nil {
 		t.Fatalf("failed to delete object key:%v, the object is still existing", fileKey)
 	}
@@ -303,6 +308,7 @@ func Test__SkipUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pb: %v", err)
 	}
+	defer pb.Close()
 
 	// create test object
 	fileName := utils.GetCurrentFunctionName()
@@ -397,6 +403,7 @@ func Test_PutGet_SmallFileOption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pb: %v", err)
 	}
+	defer pb.Close()
 
 	fileName := utils.GetCurrentFunctionName()
 	fileSize := int64(1024)
@@ -420,5 +427,48 @@ func Test_PutGet_SmallFileOption(t *testing.T) {
 	_, err = pb.GetObject(ctx, fileKey, downloadPath)
 	if err != nil {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
+	}
+}
+
+func Test_NewBucketWithOptions(t *testing.T) {
+	ctx := WithOptions(context.Background())
+	pb, err := NewPBucketWithOptions(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"},
+		WithBlockSize(10*1024*1024),
+		WithBlockWorkerChanSize(256),
+		WithBlockWorkerThreadNumber(16),
+		WithFileTaskThreadNumber(16),
+		WithStsTls(3600),
+		WithPcpTls(30),
+	)
+	if err != nil {
+		t.Fatalf("failed to create pb: %v", err)
+	}
+	defer pb.Close()
+
+	if pb.blockSize != 10*1024*1024 {
+		t.Fatalf("pb block size should be 0*1024*1024")
+	}
+	if pb.blockWorkerChanSize != 256 {
+		t.Fatalf("pb blockWorkerChanSize should be 256")
+	}
+	if pb.blockWorkerThreadNumber != 16 {
+		t.Fatalf("pb blockWorkerThreadNumber should be 16")
+	}
+	if pb.fileTaskThreadNumber != 16 {
+		t.Fatalf("pb fileTaskThreadNumber should be 16")
+	}
+	if pb.stsTtlSec != 3600 {
+		t.Fatalf("pb stsTtlSec should be 3600")
+	}
+	if pb.pcpTtlSec != 30 {
+		t.Fatalf("pb pcpTtlSec should be 30")
+	}
+
+	// for invalid block size
+	_, err = NewPBucketWithOptions(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"},
+		WithBlockSize(1*1024*1024),
+	)
+	if err == nil {
+		t.Fatalf("should fail to create pb: %v", err)
 	}
 }
