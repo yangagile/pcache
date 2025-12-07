@@ -20,10 +20,7 @@ import com.cloud.pc.config.Envs;
 import com.cloud.pc.model.PcpPulseInfo;
 import com.cloud.pc.model.PmsInfo;
 import com.cloud.pc.model.PmsPulseInfo;
-import com.cloud.pc.utils.FileUtils;
-import com.cloud.pc.utils.HttpUtils;
-import com.cloud.pc.utils.JsonUtils;
-import com.cloud.pc.utils.NetUitls;
+import com.cloud.pc.utils.*;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,8 +35,6 @@ import org.springframework.stereotype.Service;
 import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @Service
 @EnableAsync
@@ -64,7 +59,8 @@ public class PmsService {
             if (Envs.enableWrite || StringUtils.isBlank(Envs.existingPmsUrls)) {
                 leader = true;
             }
-            PmsInfo PmsInfo = new PmsInfo(Envs.httpHeader + NetUitls.getIp() + ":" + Envs.port + "/",
+            PmsInfo PmsInfo = new PmsInfo(Envs.httpHeader +
+                    NetworkUtils.getLocalIpAddress(Envs.netWorkInterfaceName) + ":" + Envs.port + "/",
                     metaService.getVersion(), leader, new Date());
             pmsList.add(PmsInfo);
             if (StringUtils.isNotBlank(Envs.existingPmsUrls)) {

@@ -26,6 +26,8 @@ public class Envs {
             8081, Integer::valueOf);
     public static String httpHeader = ComUtils.getProps("pms.http.header",
             "http://", String::valueOf);
+    public static String netWorkInterfaceName = ComUtils.getProps("pcp.network.interface.name",
+            "", String::valueOf);
 
     // auth
     public static String ak = ComUtils.getProps("pcp.ak",

@@ -11,11 +11,11 @@
    nohup minio server "~/minio-data" --console-address ":9001" > minio.log 2>&1 &
 
    // 命别名为 myminio
-   mc alias set myminio http://localhost:9000 yang@minio yun@minio
+   mc alias set myminio http://localhost:9000 user@minio password@minio
 
 2. 通过 mc 命令创建用户（AK/SK），用户并绑定相关权限。。
    ```
-   // myminio 是
+   // 添加用户
    mc admin user add myminio ak-minio-user sk-minio-sts-password
 
    // 绑定权限
@@ -29,9 +29,7 @@
       {
         "Effect": "Allow",
         "Action": [
-          "s3:ListBucket",
-          "s3:GetObject",
-          "s3:PutObject"
+          "s3:*"
         ],
         "Resource": [
           "arn:aws:s3:::*"

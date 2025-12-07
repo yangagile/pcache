@@ -34,6 +34,8 @@ public class Envs {
     public static Integer port = ComUtils.getProps("server.port", 8080, Integer::valueOf);
     public static String httpHeader = ComUtils.getProps("pms.http.header",
             "http://", String::valueOf);
+    public static String netWorkInterfaceName = ComUtils.getProps("pms.network.interface.name",
+            "", String::valueOf);
 
     // auth
     public static Boolean enableToken = ComUtils.getProps("pms.enable.token",

@@ -21,12 +21,7 @@ import com.cloud.pc.model.PmsInfo;
 import com.cloud.pc.scanner.DirectoryScanner;
 import com.cloud.pc.model.PcpPulseInfo;
 import com.cloud.pc.scanner.FileStat;
-import com.cloud.pc.utils.FileUtils;
-import com.cloud.pc.utils.HttpUtils;
-import com.cloud.pc.utils.JsonUtils;
-import com.cloud.pc.utils.NetUitls;
-import com.cloud.pc.utils.SecretUtils;
-import com.cloud.pc.utils.UrlProbe;
+import com.cloud.pc.utils.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,7 +61,8 @@ public class PulseTask implements Runnable, UrlProbe.IUrlProbeFunction{
             }
             url = FileUtils.mergePath(urlProbe.getUrl(), "api/v1/pms/pcp/pulse");
             PcpPulseInfo pulseInfo = new PcpPulseInfo();
-            pulseInfo.setHost(Envs.httpHeader + NetUitls.getIp() + ":" + Envs.port + "/");
+            pulseInfo.setHost(Envs.httpHeader + NetworkUtils.getLocalIpAddress(Envs.netWorkInterfaceName)
+                    + ":" + Envs.port + "/");
             pulseInfo.setTotalSize(Envs.availableSize);
             pulseInfo.setUsedSize(stat.getSize());
             pulseInfo.setFileCount(stat.getCount());
