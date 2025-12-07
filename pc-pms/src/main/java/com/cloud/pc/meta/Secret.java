@@ -16,8 +16,8 @@
 
 package com.cloud.pc.meta;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.apache.commons.lang3.StringUtils;
-import org.codehaus.jackson.annotate.JsonIgnore;
 import java.util.Date;
 
 public class Secret implements PcMeta {

@@ -16,7 +16,6 @@
 
 package com.cloud.pc.model;
 
-import org.apache.hadoop.fs.Path;
 
 public class PcPath {
     private String bucket;
@@ -25,10 +24,10 @@ public class PcPath {
     private long totalNumber;
     public PcPath(String path) {
         int pos = 0;
-        if (path.startsWith(Path.SEPARATOR)) {
+        if (path.startsWith("/")) {
             pos = 1;
         }
-        int pos2 = path.indexOf(Path.SEPARATOR, pos);
+        int pos2 = path.indexOf("/", pos);
         this.bucket = path.substring(pos, pos2);
         pos = pos2 + 1;
         pos2 = path.lastIndexOf('.');

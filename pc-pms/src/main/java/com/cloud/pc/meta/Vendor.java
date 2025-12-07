@@ -16,7 +16,8 @@
 
 package com.cloud.pc.meta;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.util.Date;
 
 public class Vendor implements PcMeta {

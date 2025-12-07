@@ -16,7 +16,8 @@
 
 package com.cloud.pc.model.routing;
 
-import org.codehaus.jackson.annotate.JsonTypeName;
+
+import com.fasterxml.jackson.annotation.JsonTypeName;
 
 import java.util.List;
 
