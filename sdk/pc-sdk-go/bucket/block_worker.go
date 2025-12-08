@@ -257,7 +257,7 @@ func (w *BlockWorker) getFromPcp(blockInfo *Block, stsInfo *StsInfo) error {
 		return err
 	}
 	req.Header.Set("X-STS", string(stsJson))
-	req.Header.Set("X-DATA-SIZE", strconv.FormatInt(blockInfo.File.LocalSize, 10))
+	req.Header.Set("X-DATA-SIZE", strconv.FormatInt(blockInfo.Size, 10))
 	req.Header.Set("X-BLOCK-SIZE", strconv.FormatInt(blockInfo.File.BlockSize, 10))
 
 	client := &http.Client{

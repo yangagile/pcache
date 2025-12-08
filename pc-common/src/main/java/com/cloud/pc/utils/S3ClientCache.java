@@ -24,11 +24,14 @@ import com.google.common.cache.RemovalListener;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.http.SdkHttpClient;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 public class S3ClientCache {
@@ -39,6 +42,14 @@ public class S3ClientCache {
     private static final Boolean checksumEnable = ComUtils.getProps(
             "pc.s3.client.checksum.enable", null, Boolean::valueOf);
 
+    // HTTP连接池配置
+    private static final int MAX_CONNECTIONS = ComUtils.getProps(
+            "pc.s3.client.http.maxConnections", 100, Integer::valueOf);
+    private static final int CONNECTION_TIMEOUT_SECONDS = ComUtils.getProps(
+            "pc.s3.client.http.connectionTimeout", 10, Integer::valueOf);
+    private static final int SOCKET_TIMEOUT_SECONDS = ComUtils.getProps(
+            "pc.s3.client.http.socketTimeout", 30, Integer::valueOf);
+
     private static Cache<S3ClientCacheKey, S3Client> buildS3SyncClientCache() {
         return CacheBuilder.newBuilder()
                 .maximumSize(50)
@@ -46,7 +57,11 @@ public class S3ClientCache {
                 .removalListener((RemovalListener<S3ClientCacheKey, S3Client>) ele -> {
                     S3Client client;
                     if ((client = ele.getValue()) != null) {
-                        client.close();
+                        try {
+                            client.close();
+                        } catch (Exception e) {
+                            // 记录日志但不要抛出异常
+                        }
                     }
                 })
                 .build();
@@ -80,14 +95,25 @@ public class S3ClientCache {
                 .build();
     }
 
+    private static SdkHttpClient buildApacheHttpClient() {
+        return ApacheHttpClient.builder()
+                .maxConnections(MAX_CONNECTIONS)
+                .connectionTimeout(Duration.ofSeconds(CONNECTION_TIMEOUT_SECONDS))
+                .socketTimeout(Duration.ofSeconds(SOCKET_TIMEOUT_SECONDS))
+                .connectionTimeToLive(Duration.ofMinutes(5)) // 连接TTL
+                .build();
+    }
+
     private static S3Client newS3ClientInstance(StsInfo stsInfo) {
         return S3Client.builder()
                 .serviceConfiguration(buildS3Configuration(stsInfo.getStorageType()))
                 .endpointOverride(URI.create(stsInfo.getEndpoint()))
                 .region(Region.of(stsInfo.getRegion()))
                 .credentialsProvider(StaticCredentialsProvider.create(buildAwsCredentials(stsInfo)))
+                .httpClient(buildApacheHttpClient()) // 使用带连接池的HTTP客户端
                 .build();
     }
+
 
     private static S3ClientCacheKey buildS3ClientSessionKey(StsInfo stsInfo) {
         return new S3ClientCacheKey(stsInfo.getAccessKey(),
@@ -114,7 +140,14 @@ public class S3ClientCache {
         try {
             return s3SyncClientCache.get(key, () -> newS3ClientInstance(stsInfo));
         } catch (Throwable e) {
-            throw new RuntimeException(e);
+            // 缓存失败时，创建新实例但不缓存
+            return newS3ClientInstance(stsInfo);
+        }
+    }
+
+    public static void invalidateCache() {
+        if (s3SyncClientCache != null) {
+            s3SyncClientCache.invalidateAll();
         }
     }
 }

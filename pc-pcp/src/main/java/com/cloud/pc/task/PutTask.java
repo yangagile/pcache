@@ -71,7 +71,7 @@ public class PutTask implements Runnable {
                 String eTag;
                 if (pcPath.isSingleFile()) {
                     eTag = uploadFullFile();
-                    LOG.info("successfully to put key:{} size{} retryCount:{} return etag:{}",
+                    LOG.info("successfully to put key:{} size:{} retryCount:{} return etag:{}",
                             pcPath.getKey(), content.length, retryCount, eTag);
                 } else {
                     eTag = uploadPart();

@@ -5,7 +5,7 @@ PARENT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 LOG_DIR="${PARENT_DIR}/logs/"
 mkdir -p "${LOG_DIR}"
 
-VM_OPT="-Xms512m -Xmx1024m"
+VM_OPT="-Xms4g -Xmx8g"
 
 ENVS_AUTH="-Dserver.address=0.0.0.0 -Dserver.port=8091 -Dpcp.ak=ak-pcp-admin  -Dpcp.sk=yWlt32Rw6uImzTcAKJ5AZO5Bqw9rPS1YSZKZfgyv3ao="
 ENVS_LOGS="-Dpcp.log.dir=${LOG_DIR}"

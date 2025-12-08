@@ -16,6 +16,7 @@
 
 package com.cloud.pc.pulse;
 
+import com.cloud.pc.cache.BlockCache;
 import com.cloud.pc.config.Envs;
 import com.cloud.pc.model.PmsInfo;
 import com.cloud.pc.scanner.DirectoryScanner;
@@ -67,11 +68,12 @@ public class PulseTask implements Runnable, UrlProbe.IUrlProbeFunction{
             pulseInfo.setUsedSize(stat.getSize());
             pulseInfo.setFileCount(stat.getCount());
             pulseInfo.setLevel(1);
-            HttpUtils.HttpResponse response = HttpUtils.sendRequest(url,
-                    "POST", getPmsHeader(), null, JsonUtils.toJson(pulseInfo));
-            if (response.getStatusCode() == 200) {
-                LOG.debug("pulse info:{}", pulseInfo);
-            } else {
+            String info = JsonUtils.toJson(pulseInfo);
+            LOG.info("PCP pulse info:{} memoryCache:{}/{}", info,
+                    BlockCache.instance().size(), Envs.BlockCacheSize);
+            HttpUtils.HttpResponse response = HttpUtils.sendRequest(url, "POST", getPmsHeader(),
+                    null, info);
+            if (response.getStatusCode() != 200) {
                 LOG.error("failed to send pulse info! error:{}" , response.getStatusCode());
             }
         } catch (IOException e) {
