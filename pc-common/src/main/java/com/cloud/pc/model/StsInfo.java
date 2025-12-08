@@ -16,6 +16,8 @@
 
 package com.cloud.pc.model;
 
+import com.google.common.base.Objects;
+
 public class StsInfo {
     private String BucketName;
     private String region;
@@ -106,5 +108,10 @@ public class StsInfo {
 
     public void setExpiration(long expiration) {
         this.expiration = expiration;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(endpoint, region, BucketName, accessKey, accessSecret, securityToken);
     }
 }

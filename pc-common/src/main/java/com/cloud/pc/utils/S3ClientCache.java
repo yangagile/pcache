@@ -16,11 +16,12 @@
 
 package com.cloud.pc.utils;
 
-import com.cloud.pc.model.S3ClientCacheKey;
 import com.cloud.pc.model.StsInfo;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -35,32 +36,49 @@ import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 public class S3ClientCache {
-    public final static Cache<S3ClientCacheKey, S3Client> s3SyncClientCache = buildS3SyncClientCache();
+    private static final Logger LOG = LoggerFactory.getLogger(UrlProbe.class);
+    public static Cache<StsInfo, S3Client> s3SyncClientCache ;
 
-    protected static final boolean clientCacheEnabled = ComUtils.getProps(
-            "pc.s3.client.cache.enabled", true, Boolean::valueOf);
-    private static final Boolean checksumEnable = ComUtils.getProps(
-            "pc.s3.client.checksum.enable", null, Boolean::valueOf);
+    private static final String CONFIG_PREFIX = "pc.s3.client.";
 
-    // HTTP连接池配置
-    private static final int MAX_CONNECTIONS = ComUtils.getProps(
-            "pc.s3.client.http.maxConnections", 100, Integer::valueOf);
-    private static final int CONNECTION_TIMEOUT_SECONDS = ComUtils.getProps(
-            "pc.s3.client.http.connectionTimeout", 10, Integer::valueOf);
+    protected static final boolean CACHE_ENABLED = ComUtils.getProps(
+            CONFIG_PREFIX + "cache.enabled", true, Boolean::valueOf);
+    private static final int CACHE_MAX_SIZE = ComUtils.getProps(
+            CONFIG_PREFIX + "cache.max.size", 50, Integer::valueOf);
+    private static final int CACHE_EXPIRE_TIME_MINUTES = ComUtils.getProps(
+            CONFIG_PREFIX + "cache.expire.time.minutes", 15, Integer::valueOf);
+
+    private static final Boolean CONFIG_CHECKSUM_ENABLED = ComUtils.getProps(
+            CONFIG_PREFIX + "config.checksum.enabled", true, Boolean::valueOf);
+
+    // HTTP pool configuration
+    private static final int HTTP_MAX_CONNECTIONS = ComUtils.getProps(
+            CONFIG_PREFIX + "http.maxConnections", 100, Integer::valueOf);
+    private static final int HTTP_CONNECTION_TIMEOUT_SECONDS = ComUtils.getProps(
+            CONFIG_PREFIX + "http.connectionTimeout", 10, Integer::valueOf);
     private static final int SOCKET_TIMEOUT_SECONDS = ComUtils.getProps(
-            "pc.s3.client.http.socketTimeout", 30, Integer::valueOf);
+            CONFIG_PREFIX + "http.socketTimeout", 30, Integer::valueOf);
 
-    private static Cache<S3ClientCacheKey, S3Client> buildS3SyncClientCache() {
+    private static Cache<StsInfo, S3Client> buildS3SyncClientCache() {
+        if (!CACHE_ENABLED) {
+            LOG.debug("S3 client cache is disabled");
+            return null;
+        }
+
         return CacheBuilder.newBuilder()
-                .maximumSize(50)
-                .expireAfterAccess(15, TimeUnit.MINUTES)
-                .removalListener((RemovalListener<S3ClientCacheKey, S3Client>) ele -> {
+                .maximumSize(CACHE_MAX_SIZE)
+                .expireAfterAccess(CACHE_EXPIRE_TIME_MINUTES, TimeUnit.MINUTES)
+                .removalListener((RemovalListener<StsInfo, S3Client>) ele -> {
                     S3Client client;
                     if ((client = ele.getValue()) != null) {
+                        String cause = ele.getCause().name();
+                        LOG.debug("remove S3 client from cache. cause: {}, key: {}",
+                                cause, ele.getKey().getAccessKey());
                         try {
                             client.close();
                         } catch (Exception e) {
-                            // 记录日志但不要抛出异常
+                            LOG.error("exception to close S3 client, key: {}",
+                                    ele.getKey().getAccessKey(), e);
                         }
                     }
                 })
@@ -69,19 +87,17 @@ public class S3ClientCache {
 
     private static S3Configuration buildS3Configuration(String storageType) {
         S3Configuration.Builder builder = S3Configuration.builder();
+        if (CONFIG_CHECKSUM_ENABLED != null) {
+            builder.checksumValidationEnabled(CONFIG_CHECKSUM_ENABLED);
+        }
         switch (storageType) {
             case "BOS":
-                return builder.checksumValidationEnabled(checksumEnable != null ? checksumEnable : true)
-                        .chunkedEncodingEnabled(false).build();
+                return builder.chunkedEncodingEnabled(false).build();
             case "OSS":
-                return builder.checksumValidationEnabled(checksumEnable != null ? checksumEnable : true)
-                        .chunkedEncodingEnabled(false).pathStyleAccessEnabled(false).build();
+                return builder.chunkedEncodingEnabled(false)
+                        .pathStyleAccessEnabled(false).build();
             case "TOS":
-                return builder.checksumValidationEnabled(checksumEnable != null ? checksumEnable : true)
-                        .chunkedEncodingEnabled(true).build();
             case "S3":
-                return builder.checksumValidationEnabled(checksumEnable != null ? checksumEnable : true)
-                        .chunkedEncodingEnabled(true).build();
             default:
                 return builder.chunkedEncodingEnabled(true).build();
         }
@@ -97,32 +113,28 @@ public class S3ClientCache {
 
     private static SdkHttpClient buildApacheHttpClient() {
         return ApacheHttpClient.builder()
-                .maxConnections(MAX_CONNECTIONS)
-                .connectionTimeout(Duration.ofSeconds(CONNECTION_TIMEOUT_SECONDS))
+                .maxConnections(HTTP_MAX_CONNECTIONS)
+                .connectionTimeout(Duration.ofSeconds(HTTP_CONNECTION_TIMEOUT_SECONDS))
                 .socketTimeout(Duration.ofSeconds(SOCKET_TIMEOUT_SECONDS))
                 .connectionTimeToLive(Duration.ofMinutes(5)) // 连接TTL
                 .build();
     }
 
     private static S3Client newS3ClientInstance(StsInfo stsInfo) {
+        if (stsInfo == null) {
+            throw new IllegalArgumentException("StsInfo cannot be null");
+        }
         return S3Client.builder()
                 .serviceConfiguration(buildS3Configuration(stsInfo.getStorageType()))
                 .endpointOverride(URI.create(stsInfo.getEndpoint()))
                 .region(Region.of(stsInfo.getRegion()))
                 .credentialsProvider(StaticCredentialsProvider.create(buildAwsCredentials(stsInfo)))
-                .httpClient(buildApacheHttpClient()) // 使用带连接池的HTTP客户端
+                .httpClient(buildApacheHttpClient()) // user http pool
                 .build();
     }
 
-
-    private static S3ClientCacheKey buildS3ClientSessionKey(StsInfo stsInfo) {
-        return new S3ClientCacheKey(stsInfo.getAccessKey(),
-                stsInfo.getAccessSecret(),
-                stsInfo.getSecurityToken());
-    }
-
     private static void closeS3Client(S3Client client) {
-        if (clientCacheEnabled || client == null) {
+        if (CACHE_ENABLED || client == null) {
             return;
         }
         try {
@@ -131,16 +143,23 @@ public class S3ClientCache {
         }
     }
 
-    public static S3Client buildS3Client(StsInfo stsInfo, boolean untrackedLifecycleInstance) {
-        if (untrackedLifecycleInstance || !clientCacheEnabled) {
+    public static S3Client buildS3Client(StsInfo stsInfo, boolean uncached) {
+        if (uncached || !CACHE_ENABLED) {
+            LOG.debug("creating uncached S3 client for key: {}", stsInfo.getAccessKey());
             return newS3ClientInstance(stsInfo);
         }
 
-        S3ClientCacheKey key = buildS3ClientSessionKey(stsInfo);
         try {
-            return s3SyncClientCache.get(key, () -> newS3ClientInstance(stsInfo));
+            if (s3SyncClientCache == null) {
+                synchronized (S3ClientCache.class) {
+                    if (s3SyncClientCache == null) {
+                        s3SyncClientCache = buildS3SyncClientCache();
+                    }
+                }
+            }
+            return s3SyncClientCache.get(stsInfo, () -> newS3ClientInstance(stsInfo));
         } catch (Throwable e) {
-            // 缓存失败时，创建新实例但不缓存
+            LOG.error("exception to get S3 client from cache for key: {}", stsInfo.getAccessKey(), e);
             return newS3ClientInstance(stsInfo);
         }
     }

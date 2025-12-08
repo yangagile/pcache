@@ -48,8 +48,12 @@ public class FileServerHandler extends SimpleChannelInboundHandler<FullHttpReque
 
     private void getFile(ChannelHandlerContext ctx,  FullHttpRequest request, String localFile, PcPath pcPath) {
         String sts = request.headers().get("X-STS");
-        StsInfo stsInfo = JsonUtils.fromJson(sts, StsInfo.class);
-        final S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
+        StsInfo stsInfo = null;
+        S3Client s3Client = null;
+        if (StringUtils.isNotBlank(sts)) {
+            stsInfo = JsonUtils.fromJson(sts, StsInfo.class);
+            s3Client = S3ClientCache.buildS3Client(stsInfo, false);
+        }
         long size = Long.parseLong(request.headers().get("X-DATA-SIZE"));
         long blockSize = Long.parseLong(request.headers().get("X-BLOCK-SIZE"));
         GetTask getTask = new GetTask(ctx, request, s3Client, stsInfo, localFile, pcPath, size, blockSize);
@@ -80,7 +84,7 @@ public class FileServerHandler extends SimpleChannelInboundHandler<FullHttpReque
 
     @Override
     public void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) {
-        LOG.info("new request from ip={} uri={}", ctx.channel().remoteAddress().toString(), request.uri());
+        LOG.debug("new request from ip={} uri={}", ctx.channel().remoteAddress().toString(), request.uri());
         if (!request.decoderResult().isSuccess()) {
             LOG.error("[request]failed to decoder request！reason:{}", request.decoderResult().cause());
             sendError(ctx, BAD_REQUEST);

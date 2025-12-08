@@ -18,6 +18,7 @@ package com.cloud.pc.cache;
 
 public class LRUEvictionPolicy implements IEvictionPolicy {
     private CacheNode lruHead, lruTail;
+    private final Object lock = new Object();
 
     public LRUEvictionPolicy () {
         // 初始化LRU链表
@@ -27,32 +28,42 @@ public class LRUEvictionPolicy implements IEvictionPolicy {
         lruTail.pre = lruHead;
     }
     public void access(CacheNode node) {
-        remove(node);
-        insert(node);
+        synchronized (lock) {
+            remove(node);
+            insert(node);
+        }
     }
 
     public void insert(CacheNode node) {
-        node.pre = lruHead;
-        node.next = lruHead.next;
-        lruHead.next.pre = node;
-        lruHead.next = node;
+        synchronized (lock) {
+            node.pre = lruHead;
+            node.next = lruHead.next;
+            lruHead.next.pre = node;
+            lruHead.next = node;
+        }
     }
     public void remove(CacheNode node) {
-        node.pre.next = node.next;
-        node.next.pre = node.pre;
+        synchronized (lock) {
+            node.pre.next = node.next;
+            node.next.pre = node.pre;
+        }
     }
     public String evict() {
-        CacheNode lruNode = lruTail.pre;
-        if (lruNode != lruHead) {
-            String blockIdToEvict = lruNode.blockPath;
-            remove(lruNode);
-            return blockIdToEvict;
+        synchronized (lock) {
+            CacheNode lruNode = lruTail.pre;
+            if (lruNode != lruHead) {
+                String blockIdToEvict = lruNode.blockPath;
+                remove(lruNode);
+                return blockIdToEvict;
+            }
         }
         return null;
     }
     public void clear() {
-        lruHead.next = lruTail;
-        lruTail.pre = lruHead;
+        synchronized (lock) {
+            lruHead.next = lruTail;
+            lruTail.pre = lruHead;
+        }
     }
 }
 

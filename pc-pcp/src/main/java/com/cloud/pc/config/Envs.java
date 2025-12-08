@@ -59,7 +59,7 @@ public class Envs {
 
     // block memory cache
     public static Integer BlockCacheSize = ComUtils.getProps("pcp.block.cache.size",
-            512, Integer::valueOf);
+            1024, Integer::valueOf);
 
     // log
     public static String logDir = ComUtils.getProps("pcp.log.dir",

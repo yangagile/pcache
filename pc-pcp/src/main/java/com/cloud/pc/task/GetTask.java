@@ -134,7 +134,7 @@ public class GetTask implements Runnable {
     }
 
     private byte[] readFromLocal() {
-        LOG.info("[readFromLocal] block={} file={}", pcPath, localFile);
+        LOG.debug("[readFromLocal] block={} file={}", pcPath, localFile);
         try {
             byte[] fileData = Files.readAllBytes(Paths.get(localFile));
             if (size !=0 && fileData.length != size) {
@@ -194,15 +194,15 @@ public class GetTask implements Runnable {
             return null;
         }
         try {
-            int read_len = res.read(buffer);
-            if (read_len != size) {
-                if (size == 0) {
-                    return Arrays.copyOfRange(buffer, 0, read_len);
-                } else {
-                    LOG.error("[downloadBlock] failed to download block {} for invalid read size {} of {}",
-                            pcPath, read_len, size);
-                    return null;
-                }
+            int totalRead = 0;
+            int readLen;
+            while (totalRead < size && (readLen = res.read(buffer, totalRead, (int)size - totalRead)) != -1) {
+                totalRead += readLen;
+            }
+            if (totalRead != size) {
+                LOG.error("[downloadBlock] Failed to download block {}: expected {} bytes, got {} bytes",
+                        pcPath, size, totalRead);
+                return null;
             }
             return buffer;
         } catch (IOException e) {

@@ -71,16 +71,16 @@ public class PutTask implements Runnable {
                 String eTag;
                 if (pcPath.isSingleFile()) {
                     eTag = uploadFullFile();
-                    LOG.info("successfully to put key:{} size:{} retryCount:{} return etag:{}",
+                    LOG.debug("successfully to put key:{} size:{} retryCount:{} return etag:{}",
                             pcPath.getKey(), content.length, retryCount, eTag);
                 } else {
                     eTag = uploadPart();
-                    LOG.info("successfully to put key:{} number:{}/{} size{} uploadId:{} retryCount:{} return etag:{}",
+                    LOG.debug("successfully to put key:{} number:{}/{} size{} uploadId:{} retryCount:{} return etag:{}",
                             pcPath.getKey(), pcPath.getNumber(), pcPath.getTotalNumber(), content.length,
                             uploadId, retryCount, eTag);
                 }
 
-                // 响应客户端 (切换回EventLoop线程)
+                // response to client and back to EventLoop thread
                 ctx.executor().execute(() -> {
                     HttpHelper.sendResponse(ctx, HttpResponseStatus.OK, eTag);
                 });

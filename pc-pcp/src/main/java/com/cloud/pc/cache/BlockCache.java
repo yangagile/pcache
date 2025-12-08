@@ -35,7 +35,13 @@ public class BlockCache {
     private static volatile BlockCache instance;
 
     public static void init(int capacity, IEvictionPolicy strategy) {
-        instance = new BlockCache(capacity, strategy);
+        if (instance == null) {
+            synchronized (BlockCache.class) {
+                if (instance == null) {
+                    instance = new BlockCache(capacity, strategy);
+                }
+            }
+        }
     }
 
     public static BlockCache instance() {
@@ -52,6 +58,10 @@ public class BlockCache {
     }
 
     public byte[] getBlock(String blockPath) {
+        if (blockPath == null) {
+            return null;
+        }
+
         readLock.lock();
         try {
             CacheNode node = cache.get(blockPath);
@@ -59,9 +69,8 @@ public class BlockCache {
                 evictStrategy.access(node);
 
                 return node.blockData;
-            } else {
-                return null;
             }
+            return null;
         } finally {
             readLock.unlock();
         }
@@ -72,41 +81,48 @@ public class BlockCache {
         if (blockData == null) {
             throw new IllegalArgumentException("Block data cannot be null");
         }
+        if (blockPath == null) {
+            throw new IllegalArgumentException("Block path cannot be null");
+        }
 
         writeLock.lock();
         try {
             // replace old
-            if (cache.containsKey(blockPath)) {
-                CacheNode existingNode = cache.get(blockPath);
+            CacheNode existingNode = cache.get(blockPath);
+            if (existingNode != null) {
                 CacheNode newNode = new CacheNode(blockPath, blockData);
-                cache.put(blockPath, newNode);
-
-                evictStrategy.remove(existingNode);
                 evictStrategy.insert(newNode);
+                cache.put(blockPath, newNode);
+                evictStrategy.remove(existingNode);
                 return true;
             }
 
             // if it's full, evict block
             if (cache.size() >= capacity) {
                 String evictPath = evictStrategy.evict();
-                cache.remove(evictPath);
+                if (evictPath != null) {
+                    cache.remove(evictPath);
+                }
             }
 
             // add new
             CacheNode newNode = new CacheNode(blockPath, blockData.clone());
             cache.put(blockPath, newNode);
-
             evictStrategy.insert(newNode);
+
             return true;
         } finally {
             writeLock.unlock();
         }
     }
 
-    public boolean removeBlock(String blockPaht) {
+    public boolean removeBlock(String blockPath) {
+        if (blockPath == null) {
+            return false;
+        }
         writeLock.lock();
         try {
-            CacheNode node = cache.remove(blockPaht);
+            CacheNode node = cache.remove(blockPath);
             if (node != null) {
                 evictStrategy.remove(node);
                 return true;

@@ -46,8 +46,8 @@ github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVs
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
-github.com/yangagile/pcache/sdk/pc-sdk-go v0.0.0-20251207112954-adcb402e313a h1:X6De2Cr9g63diy4P+1a2ROc6HML3E7ZMcNFJ1AH0dXc=
-github.com/yangagile/pcache/sdk/pc-sdk-go v0.0.0-20251207112954-adcb402e313a/go.mod h1:5J80z96mqAZNRqZc1t6Td4hJ27p35eJugYxnWDNRcfw=
+github.com/yangagile/pcache/sdk/pc-sdk-go v0.0.0-20251208041914-9694311c964b h1:GV6VXWPMeE4Lzb+mUuY+1J7yywM/FN3HStbzH9ypMZo=
+github.com/yangagile/pcache/sdk/pc-sdk-go v0.0.0-20251208041914-9694311c964b/go.mod h1:5J80z96mqAZNRqZc1t6Td4hJ27p35eJugYxnWDNRcfw=
 golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.38.0 h1:3yZWxaJjBmCWXqhN1qh02AkOnCQ1poK6oF+a7xWL6Gc=
 golang.org/x/sys v0.38.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=

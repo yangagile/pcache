@@ -22,49 +22,62 @@ import java.util.Map;
 public class LFUEvictionPolicy implements IEvictionPolicy {
     private Map<Integer, NodeList> freqs;
     private int minFreq;
+    private final Object lock = new Object();
 
     public LFUEvictionPolicy() {
         freqs = new HashMap<>();
         minFreq = 0;
     }
     public void access(CacheNode node) {
-        remove(node);
-        node.freq++;
-        insert(node);
+        synchronized (lock) {
+            remove(node);
+            node.freq++;
+            insert(node);
+        }
     }
     public void insert(CacheNode node) {
-        freqs.putIfAbsent(node.freq, new NodeList());
-        freqs.get(node.freq).add(node);
-        if (minFreq > node.freq) {
-            minFreq = node.freq;
+        synchronized (lock) {
+            freqs.putIfAbsent(node.freq, new NodeList());
+            freqs.get(node.freq).add(node);
+            if (minFreq > node.freq) {
+                minFreq = node.freq;
+            }
         }
     }
     public void remove(CacheNode node) {
-        NodeList nodeList = freqs.get(node.freq);
-        nodeList.remove(node);
-        if (nodeList.isEmpty()) {
-            freqs.remove(node.freq);
-            if (minFreq == node.freq) {
-                minFreq++;
+        synchronized (lock) {
+            NodeList nodeList = freqs.get(node.freq);
+            nodeList.remove(node);
+            if (nodeList.isEmpty()) {
+                freqs.remove(node.freq);
+                if (minFreq == node.freq) {
+                    minFreq++;
+                }
             }
         }
     }
 
     public String evict() {
-        NodeList nodeList= freqs.get(minFreq);
-        while(nodeList == null && nodeList.isEmpty()) {
-            minFreq++;
-            nodeList= freqs.get(minFreq);
+        synchronized (lock) {
+            NodeList nodeList = freqs.get(minFreq);
+            while (nodeList == null && nodeList.isEmpty()) {
+                minFreq++;
+                nodeList = freqs.get(minFreq);
+            }
+            CacheNode node = nodeList.tail.pre;
+            nodeList.remove(node);
+            if (nodeList.isEmpty()) {
+                freqs.remove(minFreq);
+                minFreq++;
+            }
+            return node.blockPath;
         }
-        CacheNode node = nodeList.tail.pre;
-        nodeList.remove(node);
-        if (nodeList.isEmpty()) {
-            freqs.remove(minFreq);
-            minFreq++;
-        }
-        return node.blockPath;
     }
     public void clear() {
+        synchronized (lock) {
+            freqs.clear();
+            minFreq = 0;
+        }
     }
 
     class NodeList {
