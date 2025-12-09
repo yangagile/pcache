@@ -25,12 +25,12 @@ import (
 )
 
 var testRootPrefix = "test/pcache/go/sdk/"
-var testRootLocal = "~/tmp/pbucket_test/" // will use os.TempDir()
+var testRootLocal = "~/tmp/pb_minio/" // will use os.TempDir()
 
 var pmsUrl = "http://127.0.0.1:8080"
 var ak = "unittest"
 var sk = "3ewGHUIayI8cZ8qgAkoJ31gXvGqAzKmmsTLqMhTrhyM="
-var bucket = "pbucket-name"
+var bucket = "pb-minio"
 
 func TestMain(m *testing.M) {
 	setup()

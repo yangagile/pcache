@@ -21,28 +21,30 @@ import (
 )
 
 type Options struct {
-	DryRun        bool
-	DebugMode     bool
-	EnableStats   bool
-	IsSmallFile   bool // LocalSize is less than block LocalSize, will take special method for performance
-	SkipExisting  bool // if the local file or remote object is existing, not replace.
-	SkipUnchanged bool // if the local file  remote object is same, not replace.
-	Checksum      string
-	BlockStats    *BlockStats
-	FileStats     *FileStats
+	DryRun            bool
+	DebugMode         bool
+	EnableStats       bool
+	IsSmallFile       bool // LocalSize is less than block LocalSize, will take special method for performance
+	SkipExisting      bool // if the local file or remote object is existing, not replace.
+	SkipUnchanged     bool // if the local file  remote object is same, not replace.
+	Checksum          string
+	httpTimeoutFactor float32 // HTTP connection timeout factor.
+	BlockStats        *BlockStats
+	FileStats         *FileStats
 }
 
 func NewOptions() *Options {
 	return &Options{
-		DryRun:        false,
-		DebugMode:     false,
-		EnableStats:   true,
-		IsSmallFile:   false,
-		SkipExisting:  false,
-		SkipUnchanged: false,
-		Checksum:      "",
-		BlockStats:    NewBlockStats(),
-		FileStats:     NewFileStats(),
+		DryRun:            false,
+		DebugMode:         false,
+		EnableStats:       true,
+		IsSmallFile:       false,
+		SkipExisting:      false,
+		SkipUnchanged:     false,
+		Checksum:          "",
+		httpTimeoutFactor: 1.0,
+		BlockStats:        NewBlockStats(),
+		FileStats:         NewFileStats(),
 	}
 }
 

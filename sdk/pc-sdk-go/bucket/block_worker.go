@@ -71,9 +71,11 @@ type BlockWorker struct {
 	concurrent int
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
+	retryTimes int
+	client     *http.Client
 }
 
-func NewBlockWorker(threadNumber, chanSize int) *BlockWorker {
+func NewBlockWorker(ctx context.Context, threadNumber, chanSize int) *BlockWorker {
 	// start work
 	ctx, cancel := context.WithCancel(context.Background())
 	blockWorker := &BlockWorker{
@@ -81,9 +83,31 @@ func NewBlockWorker(threadNumber, chanSize int) *BlockWorker {
 		ctx:        ctx,
 		concurrent: threadNumber,
 		cancel:     cancel,
+		retryTimes: 2,
+		client:     createHTTPClient(ctx),
 	}
 	return blockWorker
 
+}
+
+func createHTTPClient(ctx context.Context) *http.Client {
+	httpTimeoutFactor := float32(1.0)
+	opt := GetOptions(ctx)
+	if opt != nil {
+		httpTimeoutFactor = opt.httpTimeoutFactor
+	}
+	return &http.Client{
+		Timeout: time.Duration(httpTimeoutFactor*30) * time.Second,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: time.Duration(httpTimeoutFactor*5) * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   time.Duration(httpTimeoutFactor*5) * time.Second,
+			ResponseHeaderTimeout: time.Duration(httpTimeoutFactor*10) * time.Second,
+			MaxConnsPerHost:       100,
+			MaxIdleConnsPerHost:   10,
+		},
+	}
 }
 
 func (w *BlockWorker) Start() {
@@ -103,29 +127,6 @@ func (w *BlockWorker) Add(Block *Block) {
 
 // put
 func (w *BlockWorker) putToPcp(block *Block, stsInfo *StsInfo, buffer []byte) (string, error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			// timeout for establishing a TCP connection to the server.
-			DialContext: (&net.Dialer{
-				Timeout: 3 * time.Second,
-			}).DialContext,
-
-			// Timeout for completing the TLS handshake over an established TCP connection.
-			TLSHandshakeTimeout: 5 * time.Second,
-
-			// Timeout for receiving the first byte of the response headers from the server
-			// after the request is fully sent.
-			ResponseHeaderTimeout: 10 * time.Second,
-
-			// MaxConnsPerHost limits the MAXIMUM TOTAL NUMBER of concurrent,
-			MaxConnsPerHost: 100,
-
-			// Maximum number of idle (keep-alive) connections to keep per host
-			MaxIdleConnsPerHost: 10,
-		},
-	}
-
 	req, err := http.NewRequestWithContext(
 		context.Background(),
 		"POST",
@@ -154,7 +155,7 @@ func (w *BlockWorker) putToPcp(block *Block, stsInfo *StsInfo, buffer []byte) (s
 		req.Header.Set("X-USER-META", string(metaJson))
 	}
 
-	resp, err := client.Do(req)
+	resp, err := w.client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -224,7 +225,16 @@ func (w *BlockWorker) PutBlock(block *Block) error {
 	// try put to PCP
 	eTag := ""
 	if block.PcpHost != "" {
-		eTag, err = w.putToPcp(block, block.File.Sts, buf)
+		for i := 0; i < w.retryTimes; i++ {
+			eTag, err = w.putToPcp(block, block.File.Sts, buf)
+			if err == nil {
+				break
+			} else {
+				log.WithError(err).WithField("PcpHost", block.PcpHost).
+					WithField("block", block.GetPcPath()).WithField("retryTimes", w.retryTimes).
+					Errorln("failed to put block to PCP, will retry..")
+			}
+		}
 		if err != nil {
 			log.WithError(err).WithField("PcpHost", block.PcpHost).WithField("block", block.GetPcPath()).
 				Errorln("failed to put block to PCP, will try from local.")
@@ -280,31 +290,8 @@ func (w *BlockWorker) getFromPcp(blockInfo *Block, stsInfo *StsInfo) error {
 	req.Header.Set("X-DATA-SIZE", strconv.FormatInt(blockInfo.Size, 10))
 	req.Header.Set("X-BLOCK-SIZE", strconv.FormatInt(blockInfo.File.BlockSize, 10))
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			// timeout for establishing a TCP connection to the server.
-			DialContext: (&net.Dialer{
-				Timeout: 3 * time.Second,
-			}).DialContext,
-
-			// Timeout for completing the TLS handshake over an established TCP connection.
-			TLSHandshakeTimeout: 5 * time.Second,
-
-			// Timeout for receiving the first byte of the response headers from the server
-			// after the request is fully sent.
-			ResponseHeaderTimeout: 10 * time.Second,
-
-			// MaxConnsPerHost limits the MAXIMUM TOTAL NUMBER of concurrent,
-			MaxConnsPerHost: 100,
-
-			// Maximum number of idle (keep-alive) connections to keep per host
-			MaxIdleConnsPerHost: 10,
-		},
-	}
-
 	// request
-	resp, err := client.Do(req)
+	resp, err := w.client.Do(req)
 	if err != nil {
 		log.WithError(err).WithField("request", req).Errorln("failed to request PCP")
 		return err
@@ -426,7 +413,16 @@ func (w *BlockWorker) GetBlock(block *Block) error {
 	options := GetOptions(*block.File.Ctx)
 	var err error
 	if block.PcpHost != "" {
-		err = w.getFromPcp(block, block.File.Sts)
+		for i := 0; i < w.retryTimes; i++ {
+			err = w.getFromPcp(block, block.File.Sts)
+			if err == nil {
+				break
+			} else {
+				log.WithError(err).WithField("PcpHost", block.PcpHost).
+					WithField("block", block.GetPcPath()).WithField("retryTimes", w.retryTimes).
+					Errorln("failed to get block from PCP, will retry..")
+			}
+		}
 		if err != nil {
 			block.State = BSTATE_OK_LOCAL_PCP_FAIL
 			log.WithError(err).WithField("PcpHost", block.PcpHost).WithField("block", block.GetPcPath()).

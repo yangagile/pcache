@@ -148,7 +148,7 @@ func NewPBucketWithOptions(
 	atomic.StorePointer(&pb.s3ClientMgrPtr, unsafe.Pointer(s3ClientMgr))
 
 	// init block put/get worker threads
-	pb.blockWorker = NewBlockWorker(pb.blockWorkerThreadNumber, pb.blockWorkerChanSize)
+	pb.blockWorker = NewBlockWorker(ctx, pb.blockWorkerThreadNumber, pb.blockWorkerChanSize)
 	pb.blockWorker.Start()
 	log.WithField("Bucket info", pb.PrintInfo()).Infoln("create Bucket done")
 	return pb, nil
