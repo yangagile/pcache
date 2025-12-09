@@ -25,6 +25,7 @@ import (
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -378,6 +379,9 @@ func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string
 	options := GetOptions(ctx)
 	startTime := time.Now().UnixMilli()
 	fileMgr := NewFileManager(pb, pb.fileTaskThreadNumber)
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
 	var err error
 	var continuationToken *string
 	for {

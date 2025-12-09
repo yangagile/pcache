@@ -129,10 +129,7 @@ public class PutTask implements Runnable {
             BlockCache.instance().putBlock(pcPath.toString(), content);
 
             // save to disk
-            if (!FileUtils.mkParentDir(Paths.get(localFile))) {
-                LOG.error("failed to create parent dir of {}", localFile);
-                throw new RuntimeException("failed to create parent dir");
-            }
+            FileUtils.mkParentDir(Paths.get(localFile));
             File outputFile = new File(localFile);
             try (FileOutputStream fos = new FileOutputStream(outputFile)) {
                 fos.write(content);

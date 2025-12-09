@@ -25,6 +25,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	log "github.com/sirupsen/logrus"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -103,7 +104,26 @@ func (w *BlockWorker) Add(Block *Block) {
 // put
 func (w *BlockWorker) putToPcp(block *Block, stsInfo *StsInfo, buffer []byte) (string, error) {
 	client := &http.Client{
-		Timeout: 90 * time.Second,
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			// timeout for establishing a TCP connection to the server.
+			DialContext: (&net.Dialer{
+				Timeout: 3 * time.Second,
+			}).DialContext,
+
+			// Timeout for completing the TLS handshake over an established TCP connection.
+			TLSHandshakeTimeout: 5 * time.Second,
+
+			// Timeout for receiving the first byte of the response headers from the server
+			// after the request is fully sent.
+			ResponseHeaderTimeout: 10 * time.Second,
+
+			// MaxConnsPerHost limits the MAXIMUM TOTAL NUMBER of concurrent,
+			MaxConnsPerHost: 100,
+
+			// Maximum number of idle (keep-alive) connections to keep per host
+			MaxIdleConnsPerHost: 10,
+		},
 	}
 
 	req, err := http.NewRequestWithContext(
@@ -261,10 +281,26 @@ func (w *BlockWorker) getFromPcp(blockInfo *Block, stsInfo *StsInfo) error {
 	req.Header.Set("X-BLOCK-SIZE", strconv.FormatInt(blockInfo.File.BlockSize, 10))
 
 	client := &http.Client{
+		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
-			ResponseHeaderTimeout: 60 * time.Second, // 读取超时
+			// timeout for establishing a TCP connection to the server.
+			DialContext: (&net.Dialer{
+				Timeout: 3 * time.Second,
+			}).DialContext,
+
+			// Timeout for completing the TLS handshake over an established TCP connection.
+			TLSHandshakeTimeout: 5 * time.Second,
+
+			// Timeout for receiving the first byte of the response headers from the server
+			// after the request is fully sent.
+			ResponseHeaderTimeout: 10 * time.Second,
+
+			// MaxConnsPerHost limits the MAXIMUM TOTAL NUMBER of concurrent,
+			MaxConnsPerHost: 100,
+
+			// Maximum number of idle (keep-alive) connections to keep per host
+			MaxIdleConnsPerHost: 10,
 		},
-		Timeout: 65 * time.Second, // 总超时（连接+读取）
 	}
 
 	// request
