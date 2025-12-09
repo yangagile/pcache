@@ -52,6 +52,8 @@ func CreateSyncCommand(config *Config) *Command {
 		config.BlockTheadNumber, "thread number of block worker")
 	syncCmd.Flags.IntVar(&config.FileThreadNumber, "file-thread-number",
 		config.FileThreadNumber, "thread number of file worker")
+	syncCmd.Flags.Float64Var(&config.HttpTimeoutFactor, "http-timeout-factor",
+		config.HttpTimeoutFactor, "block http timeout factor")
 	return syncCmd
 }
 

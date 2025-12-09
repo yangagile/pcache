@@ -28,7 +28,7 @@ type Options struct {
 	SkipExisting      bool // if the local file or remote object is existing, not replace.
 	SkipUnchanged     bool // if the local file  remote object is same, not replace.
 	Checksum          string
-	httpTimeoutFactor float32 // HTTP connection timeout factor.
+	HttpTimeoutFactor float64 // HTTP connection timeout factor.
 	BlockStats        *BlockStats
 	FileStats         *FileStats
 }
@@ -42,7 +42,7 @@ func NewOptions() *Options {
 		SkipExisting:      false,
 		SkipUnchanged:     false,
 		Checksum:          "",
-		httpTimeoutFactor: 1.0,
+		HttpTimeoutFactor: 1.0,
 		BlockStats:        NewBlockStats(),
 		FileStats:         NewFileStats(),
 	}

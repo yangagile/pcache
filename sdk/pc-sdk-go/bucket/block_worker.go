@@ -91,10 +91,10 @@ func NewBlockWorker(ctx context.Context, threadNumber, chanSize int) *BlockWorke
 }
 
 func createHTTPClient(ctx context.Context) *http.Client {
-	httpTimeoutFactor := float32(1.0)
+	httpTimeoutFactor := 1.0
 	opt := GetOptions(ctx)
 	if opt != nil {
-		httpTimeoutFactor = opt.httpTimeoutFactor
+		httpTimeoutFactor = opt.HttpTimeoutFactor
 	}
 	return &http.Client{
 		Timeout: time.Duration(httpTimeoutFactor*30) * time.Second,
