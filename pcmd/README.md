@@ -56,5 +56,7 @@ Options:
     	thread number of block worker (default 8)
   -file-thread-number int
     	thread number of file worker (default 8)
+  -http-timeout-factor float 
+    	http client timeout factor (default 1.0)
 
 ```
