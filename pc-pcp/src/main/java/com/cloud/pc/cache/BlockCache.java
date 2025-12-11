@@ -25,7 +25,8 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class BlockCache {
-    private final int capacity;
+    private final long capacity;
+    private long  size;
     private final IEvictionPolicy evictStrategy;
     private final Map<String, CacheNode> cache;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
@@ -34,27 +35,21 @@ public class BlockCache {
 
     private static volatile BlockCache instance;
 
-    public static void init(int capacity, IEvictionPolicy strategy) {
-        if (instance == null) {
-            synchronized (BlockCache.class) {
-                if (instance == null) {
-                    instance = new BlockCache(capacity, strategy);
-                }
-            }
-        }
+    public static void init(long capacity, IEvictionPolicy strategy) {
+        instance = new BlockCache(capacity, strategy);
     }
 
     public static BlockCache instance() {
         return instance;
     }
 
-    private BlockCache(int capacity, IEvictionPolicy strategy) {
+    private BlockCache(long capacity, IEvictionPolicy strategy) {
         if (capacity <= 0) {
             throw new IllegalArgumentException("Capacity must be positive");
         }
         this.capacity = capacity;
         this.evictStrategy = strategy;
-        this.cache = new HashMap<>(capacity);
+        this.cache = new HashMap<>();
     }
 
     public byte[] getBlock(String blockPath) {
@@ -93,15 +88,19 @@ public class BlockCache {
                 CacheNode newNode = new CacheNode(blockPath, blockData);
                 evictStrategy.insert(newNode);
                 cache.put(blockPath, newNode);
+                size += newNode.blockData.length;
                 evictStrategy.remove(existingNode);
+                size -= existingNode.blockData.length;
+
                 return true;
             }
 
-            // if it's full, evict block
-            if (cache.size() >= capacity) {
-                String evictPath = evictStrategy.evict();
-                if (evictPath != null) {
-                    cache.remove(evictPath);
+            // if it's full, evict blocks
+            while (size >= capacity) {
+                CacheNode evictNode = evictStrategy.evict();
+                if (evictNode != null) {
+                    cache.remove(evictNode.blockPath);
+                    size -= evictNode.blockData.length;
                 }
             }
 
@@ -109,6 +108,7 @@ public class BlockCache {
             CacheNode newNode = new CacheNode(blockPath, blockData.clone());
             cache.put(blockPath, newNode);
             evictStrategy.insert(newNode);
+            size += newNode.blockData.length;
 
             return true;
         } finally {
@@ -124,6 +124,7 @@ public class BlockCache {
         try {
             CacheNode node = cache.remove(blockPath);
             if (node != null) {
+                size -= node.blockData.length;
                 evictStrategy.remove(node);
                 return true;
             }
@@ -138,6 +139,7 @@ public class BlockCache {
         try {
             cache.clear();
             evictStrategy.clear();
+            size = 0;
         } finally {
             writeLock.unlock();
         }
@@ -152,10 +154,10 @@ public class BlockCache {
         }
     }
 
-    public int size() {
+    public long size() {
         readLock.lock();
         try {
-            return cache.size();
+            return size;
         } finally {
             readLock.unlock();
         }

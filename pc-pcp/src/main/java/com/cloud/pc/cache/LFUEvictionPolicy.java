@@ -57,7 +57,7 @@ public class LFUEvictionPolicy implements IEvictionPolicy {
         }
     }
 
-    public String evict() {
+    public CacheNode evict() {
         synchronized (lock) {
             NodeList nodeList = freqs.get(minFreq);
             while (nodeList == null && nodeList.isEmpty()) {
@@ -70,7 +70,7 @@ public class LFUEvictionPolicy implements IEvictionPolicy {
                 freqs.remove(minFreq);
                 minFreq++;
             }
-            return node.blockPath;
+            return node;
         }
     }
     public void clear() {

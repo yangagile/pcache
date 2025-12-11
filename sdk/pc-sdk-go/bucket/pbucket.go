@@ -432,7 +432,7 @@ func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string
 	}
 
 	baseInfo := fmt.Sprintf("successfully sync prefix(%s) to folder(%s)! duration(%dms) file-thread(%d) block-thread(%d).",
-		folder, prefix, time.Now().UnixMilli()-startTime, pb.fileTaskThreadNumber, pb.blockWorkerThreadNumber)
+		prefix, folder, time.Now().UnixMilli()-startTime, pb.fileTaskThreadNumber, pb.blockWorkerThreadNumber)
 	log.WithField("block-stats", GetOptions(ctx).BlockStats).
 		WithField("file-stats", GetOptions(ctx).FileStats).
 		Infoln(baseInfo)

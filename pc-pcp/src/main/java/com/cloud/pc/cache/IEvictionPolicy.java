@@ -20,6 +20,6 @@ public interface IEvictionPolicy {
     void access(CacheNode node);
     void insert(CacheNode node);
     void remove(CacheNode node);
-    String evict();
+    CacheNode evict();
     void clear();
 }

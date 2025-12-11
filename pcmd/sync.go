@@ -97,6 +97,7 @@ func handleSync(config *Config, args []string) error {
 	options.SkipExisting = config.SkipUnchanged
 	options.Checksum = config.Checksum
 	options.SkipUnchanged = config.SkipUnchanged
+	options.HttpTimeoutFactor = config.HttpTimeoutFactor
 	if upload {
 		pb, err := bucket.NewPBucketWithOptions(ctx, config.Endpoint, objectInfo.Bucket,
 			config.AK, config.SK, []string{"PutObject"},

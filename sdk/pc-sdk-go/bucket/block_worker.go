@@ -293,7 +293,7 @@ func (w *BlockWorker) getFromPcp(blockInfo *Block, stsInfo *StsInfo) error {
 	// request
 	resp, err := w.client.Do(req)
 	if err != nil {
-		log.WithError(err).WithField("request", req).Errorln("failed to request PCP")
+		log.WithError(err).WithField("PcPath", blockInfo.GetPcPath()).Errorln("failed to request PCP")
 		return err
 	}
 	defer resp.Body.Close()

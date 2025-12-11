@@ -48,13 +48,12 @@ public class LRUEvictionPolicy implements IEvictionPolicy {
             node.next.pre = node.pre;
         }
     }
-    public String evict() {
+    public CacheNode evict() {
         synchronized (lock) {
             CacheNode lruNode = lruTail.pre;
             if (lruNode != lruHead) {
-                String blockIdToEvict = lruNode.blockPath;
                 remove(lruNode);
-                return blockIdToEvict;
+                return lruNode;
             }
         }
         return null;

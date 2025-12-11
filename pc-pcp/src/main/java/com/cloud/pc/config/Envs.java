@@ -58,8 +58,8 @@ public class Envs {
             60L, Long::valueOf);
 
     // block memory cache
-    public static Integer BlockCacheSize = ComUtils.getProps("pcp.block.cache.size",
-            1024, Integer::valueOf);
+    public static Long BlockCacheSize = ComUtils.getProps("pcp.block.cache.size",
+            2*1024*1024*1024L, Long::valueOf);
 
     // log
     public static String logDir = ComUtils.getProps("pcp.log.dir",

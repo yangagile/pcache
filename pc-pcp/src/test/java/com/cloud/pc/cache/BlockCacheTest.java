@@ -23,9 +23,11 @@ import org.junit.Test;
 public class BlockCacheTest {
     static void testCache(BlockCache cache) {
         // 添加3个块
+        long dataSize = 0;
         cache.putBlock("block1", new byte[]{1, 2, 3});
         cache.putBlock("block2", new byte[]{4, 5, 6});
         cache.putBlock("block3", new byte[]{7, 8, 9});
+        dataSize  = 9;
 
         // 访问块1，使其成为最近使用的
         cache.getBlock("block2");
@@ -42,13 +44,13 @@ public class BlockCacheTest {
     @Test
     public void test_BlockCache() throws Exception {
         System.out.println("-- LRU test --");
-        BlockCache.init(3, new LRUEvictionPolicy());
+        BlockCache.init(9, new LRUEvictionPolicy());
         testCache(BlockCache.instance());
         // "block2" is the Least Recently Used one
         Assert.assertNull(BlockCache.instance().getBlock("block2"));
 
         System.out.println("--  LFU test-- ");
-        BlockCache.init(3, new LFUEvictionPolicy());
+        BlockCache.init(9, new LFUEvictionPolicy());
         testCache(BlockCache.instance());
         // frequent of "block2" is 2, the "block1" should be evicted
         Assert.assertNull(BlockCache.instance().getBlock("block1"));
