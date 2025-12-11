@@ -30,7 +30,7 @@ PCache(Parallel Cache) 一款简单/高性能/低成本的并行缓存系统，�
 </div>
 
 ## 主要模块
-PCache 由三个部分组成：
+PCache 由四个部分组成：
 ### 并行元数据服务（PMS）
    * 管理云厂商/PBucket 等信息，详见[Meta存储方案](docs/cn/meta.md)。
    * 提供多种云厂商 STS 认证服务，提供客户端访问对象存储权限。
@@ -45,7 +45,12 @@ PCache 由三个部分组成：
 ### 客户端 SDK
    * 从最近 PMS 节点获取 STS 权限，可用 PCP 列表。
    * 从 PCP 并发读/写数据块，合成文件。
-     
+
+### 命令行工具 pcmd
+* 调用 SDK 接口完成文件/目录的上传下载功能。例如，可通过以下命令并行同步 PBucket 的前缀下数据到本地目录，更多用法参见 [pcmd 使用方式](pcmd/README.md)。
+    ```
+    ./pcmd sync s3://pbucket-name/prefix/ /tmp/folder 
+    ```
 <div align="center">
 <img src="docs/images/pc-deploy.png" alt="PCache Deploy" width="80%" />
 </div>

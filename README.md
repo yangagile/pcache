@@ -37,7 +37,7 @@ Massive numbers of smart devices are distributed across various locations, uploa
 </div>
 
 ## Modules
-PCache consists of three modules:
+PCache consists of four modules:
 
 ### Parallel Meta Service (PMS)
 * Manages Meta such as cloud vendors and PBuckets. For details, refer to [Meta Storage Solution](docs/en/meta.md)。
@@ -59,7 +59,13 @@ PCache consists of three modules:
 * Retrieves STS credentials and the list of available PCPs from the nearby PMS node.
 
 * Performs concurrent read/write operations on data chunks from/to PCPs and assembles files.
-  
+
+### Command-line tool pcmd
+* Calls the SDK interface to complete the file/directory upload and download functionality. For example, you can synchronize data under a prefix of a PBucket to a local directory in parallel using the following command. For more usage, refer to:  [pcmd usage](pcmd/README.md)。
+    ```
+    ./pcmd sync s3://pbucket-name/prefix/ /tmp/folder 
+    ```
+
 <div align="center">
 <img src="docs/images/pc-deploy.png" alt="PCache Deploy" width="80%" />
 </div>
