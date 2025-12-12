@@ -73,6 +73,30 @@ PCache consists of four modules:
 ## Data Security
 An independent security authentication system is employed. Both APIs and PBuckets are accessed via AK/SK and authorized through IAM. For details, refer to [Configure Interface Authentication (Token) Guide](docs/en/api_token.md).
 
+## Performance Test
+Simple Small File Test
+
+**Test Method**：Access Baidu Object Storage (BOS) via public network to batch synchronize 10,000 small files, each 2 KB in size.
+
+**Test Machines**： 
+* Machine A: System (Ubuntu), Memory (16G), deployed with PMS/PCP
+* Machine B: System (MacOS), Memory (16G), deployed with PCP/PCMD
+
+| Operation|Time Taken (seconds)| Cache Hit Rate |S3cmd Reference |
+|-----------|----------------|----------|----------|
+| First Upload | 204 	   |  0% | 624 |
+| First Download | 150		|  0% | 584  |
+| Second Download | 7     	|  100% | 581 |
+
+**Test Conclusion：**
+*   With 2 PCP nodes and a 100% cache hit rate, the second download is 20 times faster than the first download.
+*   With 2 PCP nodes, even the first upload/download is more than three times as fast compared to directly using S3cmd.
+
+**Commands Used:**
+  ```
+  pcmd sync /tmp/small_2k_10k s3://pb-bos/test/pcmd/sync/small_2k_10k/
+  pcmd sync s3://pb-bos/test/pcmd/sync/small_2k_10k/ /tmp/small_2k_10k/
+  ```
 ## Getting Started
 Please refer to the [Quick Start Guide](docs/en/startup.md) to start using PCache immediately!
 
