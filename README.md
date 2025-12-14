@@ -1,7 +1,7 @@
 **PCache (Parallel Cache) for Object Storage** - A simple, high-performance, low-cost parallel caching system focused on improving object storage performance. Released under the Apache 2.0 open-source license. PCache abstracts away differences between backend object storage vendors, enabling easy improvement of data throughput for big data, machine learning, artificial intelligence, and various application platforms. -> [To Chinese](README_CN.md)
 
 ## Architecture
-Files are split into blocks and cached across multiple cache nodes (PCPs). Clients read from/write to files in parallel from multiple PCPs. If a file is not in the cache, it triggers multiple PCPs to pull data in parallel from the backend object storage. Different files are stored on different cloud vendors or regions according to routing rules, but are all cached on the local distributed PCP nodes.
+Files cached across multiple cache nodes (PCPs), large files are split into blocks. Clients read from/write to files in parallel from multiple PCPs. If a file is not in the cache, it triggers multiple PCPs to pull data in parallel from the backend object storage. Different files are stored on different cloud vendors or regions according to routing rules, but are all cached on the local distributed PCP nodes.
 
 <div align="center">
 <img src="docs/images/pc-arch.png" alt="PCache Architecture" width="80%" />
