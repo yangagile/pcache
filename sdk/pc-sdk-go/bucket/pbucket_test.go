@@ -19,8 +19,12 @@ package bucket
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	log "github.com/sirupsen/logrus"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
 	"os"
+	"strconv"
 	"testing"
 )
 
@@ -468,5 +472,58 @@ func Test_NewBucketWithOptions(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatalf("should fail to create pb: %v", err)
+	}
+}
+
+func Test_ListObjects(t *testing.T) {
+	ctx := WithOptions(context.Background())
+
+	pb, err := NewPBucketWithOptions(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,ListObject"},
+		WithPCacheEnable(false))
+	if err != nil {
+		t.Fatalf("failed to create Bucket: %v", err)
+	}
+	defer pb.Close()
+
+	fileName := utils.GetCurrentFunctionName()
+	fileSize := int64(1024)
+	localFilePath, err := utils.CreateTestFile(testRootLocal, fileName, fileSize)
+	if err != nil {
+		t.Fatalf("failed to create local file:%v with err:%v", localFilePath, err)
+	}
+	prefix := testRootPrefix + "test_list/"
+
+	fileNumber := 10
+	for i := 0; i < fileNumber; i++ {
+		fileKey := prefix + fileName + strconv.Itoa(i)
+		_, err = pb.PutObject(ctx, localFilePath, fileKey)
+		if err != nil {
+			t.Fatalf("failed to put file:%v with err:%v", fileName, err)
+		}
+	}
+	listCnt := 0
+	var continuationToken *string
+	for {
+		input := &s3.ListObjectsV2Input{
+			Prefix:            aws.String(prefix),
+			ContinuationToken: continuationToken, // 设置分页令牌
+		}
+		result, err := pb.ListObjectsV2(context.TODO(), input)
+		if err != nil {
+			log.WithError(err).WithField("prefix", testRootPrefix).Errorln("failed to list object")
+			break
+		}
+		for _, object := range result.Contents {
+			println("list key: " + *object.Key)
+			listCnt++
+		}
+		if *result.IsTruncated && result.NextContinuationToken != nil {
+			continuationToken = result.NextContinuationToken
+		} else {
+			break // exit loop
+		}
+	}
+	if listCnt < fileNumber {
+		t.Fatalf("failed to list prefix: %v", prefix)
 	}
 }

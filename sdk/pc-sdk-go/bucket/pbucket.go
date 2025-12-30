@@ -439,6 +439,13 @@ func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string
 	return err
 }
 
+func (pb *PBucket) ListObjectsV2(ctx context.Context,
+	params *s3.ListObjectsV2Input, optFns ...func(*Options)) (*s3.ListObjectsV2Output, error) {
+
+	params.Bucket = aws.String(pb.getStsInfo().BucketName)
+	return pb.getS3Client().ListObjectsV2(context.TODO(), params)
+}
+
 // below is private function
 func (pb *PBucket) getPcpHost(key string) string {
 	if !pb.pCacheEnable {
