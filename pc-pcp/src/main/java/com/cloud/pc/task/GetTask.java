@@ -53,17 +53,19 @@ public class GetTask implements Runnable {
     private PcPath pcPath;
     private long size;
     private long blockSize;
+    private long offset;
 
-    public GetTask(ChannelHandlerContext ctx, FullHttpRequest request, S3Client s3Client,
-                   StsInfo stsInfo, String localFile, PcPath pcPath, long size, long blockSize) {
+    public GetTask(ChannelHandlerContext ctx, FullHttpRequest request, S3Client s3Client, StsInfo stsInfo,
+                   String localFile, PcPath pcPath, long size, long blockSize, long offset) {
         this.ctx = ctx;
         this.request = request;
         this.s3Client = s3Client;
         this.stsInfo = stsInfo;
         this.localFile = localFile;
         this.pcPath = pcPath;
-        this.size = size;
         this.blockSize = blockSize;
+        this.size = size;
+        this.offset = offset;
     }
     @Override
     public void run() {
@@ -120,12 +122,22 @@ public class GetTask implements Runnable {
     private void sendFromBuffer(byte[] blockData, int hitType) {
         LOG.debug("[sendFromBuffer] block={} size={} hitTpye={}", pcPath, blockData.length,hitType);
 
-        ByteBuf buf = Unpooled.wrappedBuffer(blockData);
+        final ByteBuf buf;
+        final int contentLength;
+
+        if (size == 0 || (offset == 0 && size == blockData.length)) {
+            buf = Unpooled.wrappedBuffer(blockData);
+            contentLength = blockData.length;
+        } else {
+            contentLength = (int)Math.min(size, blockData.length-offset);
+            buf = Unpooled.wrappedBuffer(blockData, (int) offset, contentLength);
+        }
+
         FullHttpResponse respose = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1,
                 HttpResponseStatus.OK,
                 buf);
-        HttpUtil.setContentLength(respose, blockData.length);
+        HttpUtil.setContentLength(respose, contentLength);
         respose.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/octet-stream");
         respose.headers().set("X-CACHE-HIT", hitType);
         respose.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
@@ -164,29 +176,20 @@ public class GetTask implements Runnable {
         LOG.debug("[downloadBlock] block={}", pcPath);
 
         GetObjectRequest getObjectRequest;
-
-        if (pcPath.isSingleFile()) {
+        if (blockSize == 0) {
             getObjectRequest = GetObjectRequest.builder()
                     .bucket(stsInfo.getBucketName())
                     .key(pcPath.getKey())
                     .build();
         } else {
             long pos = (pcPath.getNumber() - 1) * blockSize;
-            String range = String.format("bytes=%d-%d", pos, pos + size - 1);
+            String range = String.format("bytes=%d-%d", pos, pos + blockSize - 1);
             getObjectRequest = GetObjectRequest.builder()
                     .bucket(stsInfo.getBucketName())
                     .key(pcPath.getKey())
                     .range(range)
                     .build();
         }
-        byte[] buffer;
-        if (size == 0) {
-            // for unknown size file, max size is blockSize
-            buffer = new byte[(int) blockSize];
-        } else {
-            buffer = new byte[(int)size];
-        }
-
         ResponseInputStream<GetObjectResponse> res = s3Client.getObject(
                 getObjectRequest, ResponseTransformer.toInputStream());
         if (!S3Utils.isGetObjectSuccessful(res)) {
@@ -194,17 +197,18 @@ public class GetTask implements Runnable {
             return null;
         }
         try {
-            int totalRead = 0;
-            int readLen;
-            while (totalRead < size && (readLen = res.read(buffer, totalRead, (int)size - totalRead)) != -1) {
-                totalRead += readLen;
-            }
-            if (totalRead != size) {
-                LOG.error("[downloadBlock] Failed to download block {}: expected {} bytes, got {} bytes",
-                        pcPath, size, totalRead);
+            GetObjectResponse response = res.response();
+            long contentLength = response.contentLength();
+            byte[] data = new byte[(int) contentLength];
+
+            int bytesRead = res.read(data);
+            if (bytesRead != contentLength) {
+                LOG.error("[downloadBlock] failed to download block {}, bytesRead={} contentLength={}",
+                        pcPath, bytesRead, contentLength);
                 return null;
             }
-            return buffer;
+            return data;
+
         } catch (IOException e) {
             LOG.error("[downloadBlock] exception to download block {}！", pcPath, e);
         }

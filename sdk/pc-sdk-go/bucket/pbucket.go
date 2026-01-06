@@ -375,6 +375,27 @@ func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string
 	return err
 }
 
+func (pb *PBucket) GetObjectRange(ctx context.Context, objectKey string, offset int64, buf []byte) (int64, error) {
+	fileTask := &FileTask{
+		S3Client:   pb.getS3Client(),
+		Sts:        pb.getStsInfo(),
+		Bucket:     pb.bucket,
+		Type:       FILE_TYPE_GET,
+		Offset:     offset,
+		DataBuffer: buf,
+		ObjectKey:  objectKey,
+		BlockSize:  pb.blockSize,
+		Stats:      BSTATE_FAIL,
+	}
+	fileMgr := NewSingleFileManager(pb)
+	err := fileMgr.GetFile(ctx, fileTask)
+	if err != nil {
+		return 0, err
+	}
+
+	return fileTask.DataSize, nil
+}
+
 func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string) error {
 	options := GetOptions(ctx)
 	startTime := time.Now().UnixMilli()

@@ -17,6 +17,7 @@
 package bucket
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -24,6 +25,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 )
@@ -525,5 +527,115 @@ func Test_ListObjects(t *testing.T) {
 	}
 	if listCnt < fileNumber {
 		t.Fatalf("failed to list prefix: %v", prefix)
+	}
+}
+
+func Test_ReadRange_SmallFile(t *testing.T) {
+	ctx := WithOptions(context.Background())
+	pb, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
+	if err != nil {
+		t.Fatalf("failed to create pb: %v", err)
+	}
+	defer pb.Close()
+
+	fileName := utils.GetCurrentFunctionName()
+	fileSize := 256
+
+	content := make([]byte, fileSize)
+	for i := range content {
+		content[i] = byte(i)
+	}
+	localFilePath, err := utils.CreateTestFileWithContent(testRootLocal, fileName, content)
+	if err != nil {
+		t.Fatalf("failed to create local file:%v with err:%v", localFilePath, err)
+	}
+	fileKey := testRootPrefix + fileName
+
+	// put file
+	_, err = pb.PutObject(ctx, localFilePath, fileKey)
+	if err != nil {
+		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
+	}
+
+	buf := make([]byte, 64)
+	var readLen int64
+	// get file
+	ctx = WithOptions(context.Background())
+
+	readLen, err = pb.GetObjectRange(ctx, fileKey, 0, buf)
+	if err != nil {
+		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
+	}
+	if readLen != 64 {
+		t.Fatalf("failed to get right data length")
+	}
+	if buf[0] != byte(0) && buf[63] != byte(63) {
+		t.Fatalf("failed to get right data")
+	}
+
+	readLen, err = pb.GetObjectRange(ctx, fileKey, 128, buf)
+	if err != nil {
+		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
+	}
+	if readLen != 64 {
+		t.Fatalf("failed to get right data length")
+	}
+	if buf[0] != byte(128) && buf[63] != byte(128+63) {
+		t.Fatalf("failed to get right data")
+	}
+
+	readLen, err = pb.GetObjectRange(ctx, fileKey, 250, buf)
+	if err != nil {
+		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
+	}
+	if readLen != 6 {
+		t.Fatalf("failed to get right data length")
+	}
+	if buf[0] != byte(250) {
+		t.Fatalf("failed to get right data")
+	}
+}
+
+func Test_ReadRange_BigFile(t *testing.T) {
+	ctx := WithOptions(context.Background())
+	pb, err := NewPBucket(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"})
+	if err != nil {
+		t.Fatalf("failed to new PBucket with err:%v", err)
+	}
+	defer pb.Close()
+
+	// test put file to PCP
+	fileName := utils.GetCurrentFunctionName()
+	fileSize := int64(10 * 1024 * 1024) // 10MB
+	uploadLocalPath, err := utils.CreateTestFile(testRootLocal, fileName, fileSize)
+	uploadKey := testRootPrefix + fileName
+
+	_, err = pb.PutObject(ctx, uploadLocalPath, uploadKey)
+	if err != nil {
+		t.Fatalf("failed to file:%v with err:%v", fileName, err)
+	}
+
+	dataSize := int64(5 * 1024 * 1024)
+	offset := int64(1 * 1024 * 1024)
+	buf := make([]byte, dataSize)
+	var readLen int64
+	// get file
+	ctx = WithOptions(context.Background())
+
+	readLen, err = pb.GetObjectRange(ctx, uploadKey, offset, buf)
+	if err != nil {
+		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
+	}
+	if readLen != dataSize {
+		t.Fatalf("failed to get right data length")
+	}
+
+	originData, err := os.ReadFile(filepath.Join(testRootLocal, fileName))
+	if err != nil {
+		t.Fatalf("failed to get read test file ")
+	}
+
+	if bytes.Equal(originData[offset:offset+readLen], buf) {
+		t.Fatalf("failed to get right data")
 	}
 }

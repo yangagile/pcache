@@ -65,6 +65,24 @@ func CreateTestFile(dir, name string, size int64) (string, error) {
 	return filePath, nil
 }
 
+func CreateTestFileWithContent(dir, name string, content []byte) (string, error) {
+	err := os.MkdirAll(dir, 0755)
+	if err != nil {
+		return "", err
+	}
+	filePath := filepath.Join(dir, name)
+	file, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	_, err = file.Write(content)
+	if err != nil {
+		return "", err
+	}
+	return filePath, nil
+}
+
 func MergeFiles(partPaths []string, targetPath string) error {
 	// 创建目标文件
 	targetFile, err := os.Create(targetPath)

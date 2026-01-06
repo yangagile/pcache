@@ -56,7 +56,8 @@ public class FileServerHandler extends SimpleChannelInboundHandler<FullHttpReque
         }
         long size = Long.parseLong(request.headers().get("X-DATA-SIZE"));
         long blockSize = Long.parseLong(request.headers().get("X-BLOCK-SIZE"));
-        GetTask getTask = new GetTask(ctx, request, s3Client, stsInfo, localFile, pcPath, size, blockSize);
+        long offset = Long.parseLong(request.headers().get("X-BLOCK-OFFSET"));
+        GetTask getTask = new GetTask(ctx, request, s3Client, stsInfo, localFile, pcPath, size, blockSize, offset);
         fileExecutor.submit(getTask);
     }
 

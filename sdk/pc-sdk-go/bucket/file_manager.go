@@ -64,10 +64,17 @@ type FileTask struct {
 	UploadId       *string
 	DurationTime   int64
 	Stats          int
+	Offset         int64
+	DataBuffer     []byte
+	DataSize       int64
 }
 
 func (f *FileTask) IsSingleFile() bool {
-	return f.BlockCount == 1
+	return f.IsLocalFile() && f.BlockCount == 1
+}
+
+func (f *FileTask) IsLocalFile() bool {
+	return f.LocalFile != ""
 }
 
 type FileManager struct {
@@ -244,108 +251,147 @@ func (m *FileManager) GetFile(ctx context.Context, fileTask *FileTask) error {
 	startTime := time.Now().UnixMilli()
 	defer m.updateFState(ctx, startTime, fileTask)
 	options := GetOptions(ctx)
-	if fileTask.BlockCount == 0 {
-		if options.IsSmallFile {
-			// for small file don't call head object for better performance.
-			fileTask.BlockCount = 1
-		} else {
-			err := m.headObject(ctx, fileTask)
-			if err != nil {
-				log.WithError(err).WithField("ObjectKey", fileTask.ObjectKey).
-					Errorln("failed to head remote object")
-				return err
-			}
-		}
-	}
-	if options.SkipExisting {
-		_, err := os.Stat(fileTask.LocalFile)
-		if err == nil {
-			fileTask.Stats = FSTATE_OK_SKIP_EXIST
-			if options.DebugMode {
-				log.WithField("file", fileTask.LocalFile).Infoln("the local file is existing")
-			}
-			return nil
-		}
-	}
-	if options.SkipUnchanged {
-		_, err := os.Stat(fileTask.LocalFile)
-		// 如果错误为 nil，表示文件存在；如果错误为 os.ErrNotExist，表示文件不存在
-		if err == nil {
-			same, err := m.diffFile2Object(ctx, fileTask)
-			if err != nil {
-				log.WithError(err).WithField("LocalFile", fileTask.LocalFile).
-					WithField("ObjectKey", fileTask.ObjectKey).
-					Errorln("failed to diff local file and remote object")
-				return err
-			}
-			if same {
-				if options.DebugMode {
-					log.WithField("LocalFile", fileTask.LocalFile).
-						WithField("ObjectKey", fileTask.ObjectKey).
-						Infoln("local file and remote object are same")
+
+	remaining := int64(0)
+	currentOffset := int64(0)
+	if fileTask.IsLocalFile() {
+		if fileTask.BlockCount == 0 {
+			if options.IsSmallFile {
+				// for small file don't call head object for better performance.
+				fileTask.BlockCount = 1
+				fileTask.ObjectSize = 0
+			} else {
+				err := m.headObject(ctx, fileTask)
+				if err != nil {
+					log.WithError(err).WithField("ObjectKey", fileTask.ObjectKey).
+						Errorln("failed to head remote object")
+					return err
 				}
-				fileTask.Stats = FSTATE_OK_SKIP_UNCHANG
+			}
+		}
+		if options.SkipExisting {
+			_, err := os.Stat(fileTask.LocalFile)
+			if err == nil {
+				fileTask.Stats = FSTATE_OK_SKIP_EXIST
+				if options.DebugMode {
+					log.WithField("file", fileTask.LocalFile).Infoln("the local file is existing")
+				}
 				return nil
 			}
 		}
+		if options.SkipUnchanged {
+			_, err := os.Stat(fileTask.LocalFile)
+			// 如果错误为 nil，表示文件存在；如果错误为 os.ErrNotExist，表示文件不存在
+			if err == nil {
+				same, err := m.diffFile2Object(ctx, fileTask)
+				if err != nil {
+					log.WithError(err).WithField("LocalFile", fileTask.LocalFile).
+						WithField("ObjectKey", fileTask.ObjectKey).
+						Errorln("failed to diff local file and remote object")
+					return err
+				}
+				if same {
+					if options.DebugMode {
+						log.WithField("LocalFile", fileTask.LocalFile).
+							WithField("ObjectKey", fileTask.ObjectKey).
+							Infoln("local file and remote object are same")
+					}
+					fileTask.Stats = FSTATE_OK_SKIP_UNCHANG
+					return nil
+				}
+			}
+		}
+		if fileTask.ObjectSize != 0 {
+			remaining = fileTask.ObjectSize
+		} else {
+			remaining = fileTask.BlockSize * fileTask.BlockCount
+		}
+	} else {
+		// download to buffer
+		currentOffset = fileTask.Offset
+		remaining = int64(len(fileTask.DataBuffer))
+
+		inBlockStart := currentOffset / fileTask.BlockSize
+		inBlockEnd := (currentOffset + remaining) / fileTask.BlockSize
+		fileTask.BlockCount = inBlockEnd - inBlockStart + 1
 	}
 	var wg sync.WaitGroup
 	wg.Add(int(fileTask.BlockCount))
 	fileTask.Wg = &wg
 	fileTask.Ctx = &ctx
 
-	// add blocks
-	blockList := make([]*Block, fileTask.BlockCount)
-	for i := int64(0); i < fileTask.BlockCount; i++ {
-		offset := i * fileTask.BlockSize
-		remaining := fileTask.LocalSize - offset
-		size := fileTask.BlockSize
-		if remaining < fileTask.BlockSize {
-			size = remaining
+	var blockList []*Block
+	offsetInBuffer := int64(0)
+	for remaining > 0 {
+		id := currentOffset / fileTask.BlockSize
+		offsetInBlock := currentOffset % fileTask.BlockSize
+		availableInBlock := fileTask.BlockSize - offsetInBlock
+		if remaining < availableInBlock {
+			availableInBlock = remaining
 		}
-		pcpHost := m.pb.getPcpHost(fileTask.ObjectKey + strconv.FormatInt(i, 10))
-		blockList[i] = &Block{
-			File:         fileTask,
-			PcpHost:      pcpHost,
-			BlockNumber:  i,
-			Size:         size,
-			TimeDuration: 0,
-			State:        BSTATE_FAIL,
+		blockSize := fileTask.BlockSize
+		if fileTask.IsSingleFile() {
+			blockSize = 0
 		}
-		m.pb.blockWorker.Add(blockList[i])
+		pcpHost := m.pb.getPcpHost(fileTask.ObjectKey + strconv.FormatInt(id, 10))
+		block := &Block{
+			File:           fileTask,
+			PcpHost:        pcpHost,
+			BlockNumber:    id,
+			BlockSize:      blockSize,
+			Size:           availableInBlock,
+			OffsetInBlock:  offsetInBlock,
+			OffsetInBuffer: offsetInBuffer,
+			TimeDuration:   0,
+			State:          BSTATE_FAIL,
+		}
+		m.pb.blockWorker.Add(block)
+		blockList = append(blockList, block)
+
+		currentOffset += availableInBlock
+		remaining -= availableInBlock
+		offsetInBuffer += availableInBlock
 	}
 
 	wg.Wait()
 	stats := options.BlockStats
 	// merger blocks for big file
-	if !fileTask.IsSingleFile() {
-		localPartFiles := make([]string, fileTask.BlockCount)
-		for i := 0; i < int(fileTask.BlockCount); i++ {
-			localPartFiles[i] = blockList[i].GetLocalPartPath()
-			stats.Update(blockList[i])
+	if fileTask.IsLocalFile() {
+		if !fileTask.IsSingleFile() {
+			localPartFiles := make([]string, fileTask.BlockCount)
+			for i := 0; i < int(fileTask.BlockCount); i++ {
+				localPartFiles[i] = blockList[i].GetLocalPartPath()
+				stats.Update(blockList[i])
+			}
+			err := utils.MergeFiles(localPartFiles, fileTask.LocalFile)
+			if err != nil {
+				log.WithError(err).WithField("key", fileTask.ObjectKey).Errorln("failed to merge file")
+				return err
+			}
+		} else {
+			stats.Update(blockList[0])
 		}
-		err := utils.MergeFiles(localPartFiles, fileTask.LocalFile)
-		if err != nil {
-			log.WithError(err).WithField("key", fileTask.ObjectKey).Errorln("failed to merge file")
-			return err
+
+		// verify file with checksum
+		if options.Checksum != "" {
+			same, err := m.diffFile2Object(ctx, fileTask)
+			if !same {
+				log.WithError(err).WithField("file", fileTask.LocalFile).WithField("key", fileTask.ObjectKey).
+					Errorln("failed to verify file")
+				return err
+			}
+		}
+		if options.DebugMode {
+			log.WithField("file", fileTask.LocalFile).WithField("Bucket", fileTask.Bucket).
+				WithField("key", fileTask.ObjectKey).WithField("Stats", stats).
+				Infoln("successfully get file")
 		}
 	} else {
-		stats.Update(blockList[0])
-	}
-
-	// verify file with checksum
-	if options.Checksum != "" {
-		same, err := m.diffFile2Object(ctx, fileTask)
-		if !same {
-			log.WithError(err).WithField("file", fileTask.LocalFile).WithField("key", fileTask.ObjectKey).
-				Errorln("failed to verify file")
-			return err
+		if options.DebugMode {
+			log.WithField("offset", fileTask.Offset).WithField("size", len(fileTask.DataBuffer)).
+				WithField("Bucket", fileTask.Bucket).WithField("key", fileTask.ObjectKey).
+				WithField("Stats", stats).Infoln("successfully get object to buffer")
 		}
-	}
-	if options.DebugMode {
-		log.WithField("file", fileTask.LocalFile).WithField("Bucket", fileTask.Bucket).
-			WithField("key", fileTask.ObjectKey).WithField("Stats", stats).
-			Infoln("successfully get file")
 	}
 	fileTask.Stats = FSTATE_OK
 	return nil

@@ -44,13 +44,16 @@ const (
 )
 
 type Block struct {
-	File         *FileTask
-	BlockNumber  int64
-	Size         int64
-	PcpHost      string
-	Etag         *string
-	TimeDuration int64
-	State        int
+	File           *FileTask
+	BlockNumber    int64
+	BlockSize      int64
+	Size           int64
+	OffsetInBlock  int64
+	OffsetInBuffer int64
+	PcpHost        string
+	Etag           *string
+	TimeDuration   int64
+	State          int
 }
 
 func (c *Block) GetPcPath() string {
@@ -287,8 +290,9 @@ func (w *BlockWorker) getFromPcp(blockInfo *Block, stsInfo *StsInfo) error {
 		return err
 	}
 	req.Header.Set("X-STS", string(stsJson))
+	req.Header.Set("X-BLOCK-SIZE", strconv.FormatInt(blockInfo.BlockSize, 10))
 	req.Header.Set("X-DATA-SIZE", strconv.FormatInt(blockInfo.Size, 10))
-	req.Header.Set("X-BLOCK-SIZE", strconv.FormatInt(blockInfo.File.BlockSize, 10))
+	req.Header.Set("X-BLOCK-OFFSET", strconv.FormatInt(blockInfo.File.Offset, 10))
 
 	// request
 	resp, err := w.client.Do(req)
@@ -311,7 +315,7 @@ func (w *BlockWorker) getFromPcp(blockInfo *Block, stsInfo *StsInfo) error {
 		if err == nil && dataSize > 0 {
 			if blockInfo.Size == 0 {
 				blockInfo.Size = dataSize
-			} else if dataSize != blockInfo.Size {
+			} else if blockInfo.File.IsLocalFile() && dataSize != blockInfo.Size {
 				return fmt.Errorf("LocalSize is mismatch revieve:%d block:%d", dataSize, blockInfo.Size)
 			}
 		}
@@ -329,49 +333,35 @@ func (w *BlockWorker) getFromPcp(blockInfo *Block, stsInfo *StsInfo) error {
 	}
 
 	buffer, err := io.ReadAll(resp.Body)
-	if blockInfo.Size == 0 {
-		blockInfo.Size = int64(len(buffer))
-	} else if blockInfo.Size != int64(len(buffer)) {
-		return fmt.Errorf("LocalSize is mismatch revieve:%d block:%d", len(buffer), blockInfo.Size)
-	}
 
-	// save to file
-	var localFile string
-	if blockInfo.File.IsSingleFile() {
-		localFile = blockInfo.File.LocalFile
+	if blockInfo.File.IsLocalFile() {
+		// save to file
+		var localFile string
+		if blockInfo.File.IsSingleFile() {
+			localFile = blockInfo.File.LocalFile
+		} else {
+			localFile = blockInfo.GetLocalPartPath()
+		}
+		outFile, err := os.Create(localFile)
+		if err != nil {
+			log.WithError(err).WithField("LocalFile", localFile).Errorln("failed to create local file")
+			return err
+		}
+		defer outFile.Close()
+		outFile.Write(buffer)
 	} else {
-		localFile = blockInfo.GetLocalPartPath()
+		copy(blockInfo.File.DataBuffer[blockInfo.OffsetInBuffer:], buffer)
+		blockInfo.File.DataSize += int64(len(buffer))
 	}
-	outFile, err := os.Create(localFile)
-	if err != nil {
-		log.WithError(err).WithField("LocalFile", localFile).Errorln("failed to create local file")
-		return err
-	}
-	defer outFile.Close()
-	outFile.Write(buffer)
 
 	return nil
 }
 
 func (w *BlockWorker) getFromLocal(block *Block) error {
-	// create local file
-	var localFile string
-	if block.File.IsSingleFile() {
-		localFile = block.File.LocalFile
-	} else {
-		localFile = block.GetLocalPartPath()
-	}
-	file, err := os.Create(localFile)
-	if err != nil {
-		log.WithError(err).WithField("local file", localFile).
-			Errorln("failed to create local file")
-		return err
-	}
-	defer file.Close()
-
 	// get from local
 	var result *s3.GetObjectOutput
-	if block.File.IsSingleFile() {
+	var err error
+	if block.BlockSize == 0 {
 		result, err = block.File.S3Client.GetObject(context.TODO(), &s3.GetObjectInput{
 			Bucket: aws.String(block.File.Sts.BucketName),
 			Key:    aws.String(block.File.ObjectKey),
@@ -385,8 +375,15 @@ func (w *BlockWorker) getFromLocal(block *Block) error {
 		block.File.ETag = result.ETag
 
 	} else {
-		offset := block.BlockNumber * block.File.BlockSize
-		rangeHeader := fmt.Sprintf("bytes=%d-%d", offset, offset+block.File.LocalSize-1)
+		var offset int64
+		var rangeHeader string
+		if block.File.IsLocalFile() {
+			offset = block.BlockNumber * block.File.BlockSize
+			rangeHeader = fmt.Sprintf("bytes=%d-%d", offset, offset+block.File.LocalSize-1)
+		} else {
+			offset = block.File.Offset
+			rangeHeader = fmt.Sprintf("bytes=%d-%d", offset, offset+block.Size-1)
+		}
 
 		result, err = block.File.S3Client.GetObject(context.TODO(), &s3.GetObjectInput{
 			Bucket: aws.String(block.File.Sts.BucketName),
@@ -402,9 +399,36 @@ func (w *BlockWorker) getFromLocal(block *Block) error {
 		}
 	}
 	defer result.Body.Close()
-	if _, err := io.Copy(file, result.Body); err != nil {
-		log.WithError(err).WithField("local file", localFile).Errorln("failed to write local file")
-		return err
+
+	if block.File.IsLocalFile() {
+		// create local file
+		var localFile string
+		if block.File.IsSingleFile() {
+			localFile = block.File.LocalFile
+		} else {
+			localFile = block.GetLocalPartPath()
+		}
+		file, err := os.Create(localFile)
+		if err != nil {
+			log.WithError(err).WithField("local file", localFile).
+				Errorln("failed to create local file")
+			return err
+		}
+		defer file.Close()
+
+		if _, err := io.Copy(file, result.Body); err != nil {
+			log.WithError(err).WithField("local file", localFile).Errorln("failed to write local file")
+			return err
+		}
+	} else {
+		readLen, err := io.ReadFull(result.Body, block.File.DataBuffer[block.OffsetInBuffer:])
+		if err != nil && err != io.ErrUnexpectedEOF {
+			log.WithError(err).WithField("Bucket", block.File.Sts.BucketName).
+				WithField("key", block.File.ObjectKey).
+				Errorln("failed to read full body from S3 response to buffer")
+			return err
+		}
+		block.File.DataSize += int64(readLen)
 	}
 	return nil
 }
