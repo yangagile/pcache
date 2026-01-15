@@ -157,6 +157,9 @@ func (w *BlockWorker) putToPcp(block *Block, stsInfo *StsInfo, buffer []byte) (s
 		}
 		req.Header.Set("X-USER-META", string(metaJson))
 	}
+	if block.File.IsSingleFile() {
+		req.Header.Set("X-WRITE-LAYER", strconv.Itoa(block.File.WriteLayer))
+	}
 
 	resp, err := w.client.Do(req)
 	if err != nil {

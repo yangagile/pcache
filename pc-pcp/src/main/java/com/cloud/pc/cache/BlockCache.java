@@ -52,7 +52,7 @@ public class BlockCache {
         this.cache = new HashMap<>();
     }
 
-    public byte[] getBlock(String blockPath) {
+    public CacheNode getBlock(String blockPath) {
         if (blockPath == null) {
             return null;
         }
@@ -63,7 +63,7 @@ public class BlockCache {
             if (node != null) {
                 evictStrategy.access(node);
 
-                return node.blockData;
+                return node;
             }
             return null;
         } finally {

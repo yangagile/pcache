@@ -40,6 +40,10 @@ const (
 	FILE_TASK_THREAD_NUMBER_DEFAULT    = 8
 	STS_TTL_SEC                        = 1800
 	PCP_TTL_SEC                        = 60
+
+	LAYER_MEMORY = 1
+	LAYER_DISK   = 2
+	LAYER_REMOTE = 4
 )
 
 type PBucket struct {
@@ -63,6 +67,7 @@ type PBucket struct {
 	blockWorker             *BlockWorker
 	blockWorkerThreadNumber int
 	fileTaskThreadNumber    int
+	writeLayer              int
 }
 
 func NewPBucket(ctx context.Context, pmsUrl, bucket, ak, sk string, permissions []string) (*PBucket, error) {
@@ -104,6 +109,7 @@ func NewPBucketWithOptions(
 		blockWorkerChanSize:     BLOCK_WORKER_CHAN_SIZE_DEFAULT,
 		blockWorkerThreadNumber: BLOCK_WORKER_THREAD_NUMBER_DEFAULT,
 		fileTaskThreadNumber:    FILE_TASK_THREAD_NUMBER_DEFAULT,
+		writeLayer:              LAYER_REMOTE,
 	}
 
 	// apply all options
@@ -221,6 +227,16 @@ func WithPCacheEnable(pCacheEnable bool) Option {
 	}
 }
 
+func WithWriteLayer(layer int) Option {
+	return func(pb *PBucket) error {
+		if layer < 1 || layer > 7 {
+			return fmt.Errorf("layer number must be 1 to 7")
+		}
+		pb.writeLayer = layer
+		return nil
+	}
+}
+
 func (pb *PBucket) Close() {
 	pb.blockWorker.Close()
 }
@@ -248,6 +264,7 @@ func (pb *PBucket) PutObject(ctx context.Context, localPath, objectKey string) (
 		BlockSize:  pb.blockSize,
 		BlockCount: blockCount,
 		Stats:      BSTATE_FAIL,
+		WriteLayer: pb.writeLayer,
 	}
 	fileMgr := NewSingleFileManager(pb)
 	err = fileMgr.PutFile(ctx, fileTask)
@@ -354,6 +371,7 @@ func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string
 			BlockSize:  pb.blockSize,
 			BlockCount: blockCount,
 			Stats:      BSTATE_FAIL,
+			WriteLayer: pb.writeLayer,
 		}
 
 		if options.DryRun {

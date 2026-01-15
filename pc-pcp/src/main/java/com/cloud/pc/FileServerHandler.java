@@ -17,6 +17,7 @@
 package com.cloud.pc;
 
 import com.cloud.pc.config.Envs;
+import com.cloud.pc.model.CacheLayer;
 import com.cloud.pc.model.PcPath;
 import com.cloud.pc.model.StsInfo;
 import com.cloud.pc.task.GetTask;
@@ -62,6 +63,7 @@ public class FileServerHandler extends SimpleChannelInboundHandler<FullHttpReque
     }
 
     private void putFile(ChannelHandlerContext ctx, FullHttpRequest request, String localFile, PcPath pcPath) {
+
         byte[] fileContent = new byte[request.content().readableBytes()];
         request.content().readBytes(fileContent);
         long expectedLength = Integer.parseInt(request.headers().get("Content-Length"));
@@ -78,8 +80,16 @@ public class FileServerHandler extends SimpleChannelInboundHandler<FullHttpReque
             userMetas = JsonUtils.fromJson(strUserMeta, Map.class);
         }
         String uploadId = request.headers().get("X-UPLOAD-ID");
+        String strWriteLayer = request.headers().get("X-WRITE-LAYER");
+        CacheLayer cacheLayer;
+        if (StringUtils.isNotBlank(strWriteLayer)) {
+            cacheLayer = new CacheLayer(Integer.parseInt(strWriteLayer));
+        } else {
+            cacheLayer = new CacheLayer(CacheLayer.ALL);
+        }
         S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
-        PutTask putTask = new PutTask(ctx, fileContent, s3Client, stsInfo, localFile, pcPath, uploadId, userMetas);
+        PutTask putTask = new PutTask(ctx, fileContent, s3Client, stsInfo, localFile, pcPath,
+                uploadId, userMetas, cacheLayer);
         fileExecutor.submit(putTask);
     }
 

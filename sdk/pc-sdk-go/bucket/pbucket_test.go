@@ -639,3 +639,41 @@ func Test_ReadRange_BigFile(t *testing.T) {
 		t.Fatalf("failed to get right data")
 	}
 }
+
+func Test_WriteLayerForSmallFileFromPcp(t *testing.T) {
+	ctx := WithOptions(context.Background())
+	pb, err := NewPBucketWithOptions(ctx, pmsUrl, bucket, ak, sk, []string{"PutObject,GetObject"},
+		WithWriteLayer(LAYER_MEMORY))
+	if err != nil {
+		t.Fatalf("failed to create pb: %v", err)
+	}
+	defer pb.Close()
+
+	fileName := utils.GetCurrentFunctionName()
+	fileSize := int64(1024)
+	localFilePath, err := utils.CreateTestFile(testRootLocal, fileName, fileSize)
+	if err != nil {
+		t.Fatalf("failed to create local file:%v with err:%v", localFilePath, err)
+	}
+	fileKey := testRootPrefix + fileName
+
+	// put file
+	_, err = pb.PutObject(ctx, localFilePath, fileKey)
+	if err != nil {
+		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
+	}
+	stat := GetOptions(ctx).BlockStats
+	if stat.CountPcpDisk <= 0 {
+		t.Fatalf("failed to put from PCP disk")
+	}
+
+	downloadPath := testRootLocal + fileName
+	_, err = pb.GetObject(ctx, fileKey, downloadPath)
+	if err != nil {
+		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
+	}
+	stat = GetOptions(ctx).BlockStats
+	if stat.CountPcpMemory <= 0 {
+		t.Fatalf("failed to get from PCP memeory")
+	}
+}

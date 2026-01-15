@@ -67,6 +67,7 @@ type FileTask struct {
 	Offset         int64
 	DataBuffer     []byte
 	DataSize       int64
+	WriteLayer     int
 }
 
 func (f *FileTask) IsSingleFile() bool {

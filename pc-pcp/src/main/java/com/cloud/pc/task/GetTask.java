@@ -17,6 +17,7 @@
 package com.cloud.pc.task;
 
 import com.cloud.pc.cache.BlockCache;
+import com.cloud.pc.cache.CacheNode;
 import com.cloud.pc.model.PcPath;
 import com.cloud.pc.model.PcpBlockStatus;
 import com.cloud.pc.model.StsInfo;
@@ -37,7 +38,6 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Arrays;
 
 import static com.cloud.pc.utils.HttpHelper.sendError;
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
@@ -79,9 +79,9 @@ public class GetTask implements Runnable {
         }
 
         // try from memory cache
-        byte[] blockData = BlockCache.instance().getBlock(pcPath.toString());
-        if (blockData != null) {
-            sendFromBuffer(blockData, PcpBlockStatus.HIT_MEMORY.getValue());
+        CacheNode block = BlockCache.instance().getBlock(pcPath.toString());
+        if (block != null) {
+            sendFromBuffer(block.blockData, PcpBlockStatus.HIT_MEMORY.getValue());
             BlockCounter.instance().hit(PcpBlockStatus.HIT_MEMORY);
             return;
         }
@@ -89,7 +89,7 @@ public class GetTask implements Runnable {
         // try from local disk
         File file = new File(localFile);
         if (file.exists()) {
-            blockData = readFromLocal();
+            byte[] blockData = readFromLocal();
             if (blockData != null) {
                 sendFromBuffer(blockData, PcpBlockStatus.HIT_DISK.getValue());
                 BlockCounter.instance().hit(PcpBlockStatus.HIT_DISK);
@@ -102,7 +102,7 @@ public class GetTask implements Runnable {
         }
 
         // download from remote and send
-        blockData = downloadBlock();
+        byte[] blockData = downloadBlock();
         if (blockData != null) {
             sendFromBuffer(blockData, PcpBlockStatus.HIT_REMOTE.getValue());
 

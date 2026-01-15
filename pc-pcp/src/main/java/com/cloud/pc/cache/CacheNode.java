@@ -17,12 +17,11 @@
 package com.cloud.pc.cache;
 
 public class CacheNode {
-    final String blockPath;
-    final byte[] blockData;
+    public final String blockPath;
+    public final byte[] blockData;
     final long timestamp;
     int freq;
     CacheNode pre, next; // 用于LRU链表
-
     CacheNode(String blockPath, byte[] blockData) {
         this.blockPath = blockPath;
         this.blockData = blockData;

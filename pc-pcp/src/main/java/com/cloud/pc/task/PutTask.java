@@ -17,6 +17,7 @@
 package com.cloud.pc.task;
 
 import com.cloud.pc.cache.BlockCache;
+import com.cloud.pc.model.CacheLayer;
 import com.cloud.pc.model.PcPath;
 import com.cloud.pc.model.StsInfo;
 import com.cloud.pc.utils.FileUtils;
@@ -50,9 +51,10 @@ public class PutTask implements Runnable {
     private String localFile;
     private String uploadId;
     private Map<String, String> userMetas;
+    CacheLayer cacheLayer;
 
     public PutTask(ChannelHandlerContext ctx, byte[] content, S3Client s3Client, StsInfo stsInfo,
-                   String localFile, PcPath pcPath, String uploadId, Map<String, String> userMetas) {
+                   String localFile, PcPath pcPath, String uploadId, Map<String, String> userMetas, CacheLayer cacheLayer) {
         this.ctx = ctx;
         this.content = content;
         this.s3Client = s3Client;
@@ -61,6 +63,7 @@ public class PutTask implements Runnable {
         this.pcPath = pcPath;
         this.uploadId = uploadId;
         this.userMetas = userMetas;
+        this.cacheLayer = cacheLayer;
     }
 
     @Override
@@ -68,6 +71,21 @@ public class PutTask implements Runnable {
         int retryCount = 3;
         while (retryCount > 0) {
             try {
+                BlockCache.instance().putBlock(pcPath.toString(), content);
+                if (cacheLayer.maxLayer() == CacheLayer.MEMORY) {
+                    ctx.executor().execute(() -> {
+                        HttpHelper.sendResponse(ctx, HttpResponseStatus.OK, "memory");
+                    });
+                }
+
+                // save to disk
+                saveToDisk(localFile);
+                if (cacheLayer.maxLayer() == CacheLayer.DISK) {
+                    ctx.executor().execute(() -> {
+                        HttpHelper.sendResponse(ctx, HttpResponseStatus.OK, "disk");
+                    });
+                }
+
                 String eTag;
                 if (pcPath.isSingleFile()) {
                     eTag = uploadFullFile();
@@ -81,10 +99,11 @@ public class PutTask implements Runnable {
                 }
 
                 // response to client and back to EventLoop thread
-                ctx.executor().execute(() -> {
-                    HttpHelper.sendResponse(ctx, HttpResponseStatus.OK, eTag);
-                });
-                addCacheAndDisk();
+                if (cacheLayer.maxLayer() == CacheLayer.REMOTE) {
+                    ctx.executor().execute(() -> {
+                        HttpHelper.sendResponse(ctx, HttpResponseStatus.OK, eTag);
+                    });
+                }
                 return;
             } catch (Exception e) {
                 LOG.error("exception to put {} size{} retryCount:{}", pcPath, content.length, retryCount, e);
@@ -119,24 +138,21 @@ public class PutTask implements Runnable {
                 .key(pcPath.getKey()).build();
 
         RequestBody requestBody = RequestBody.fromBytes(content);
-        PutObjectResponse response = s3Client.putObject(putObjectRequest, requestBody);
+            PutObjectResponse response = s3Client.putObject(putObjectRequest, requestBody);
         return response.eTag();
     }
 
-    private void addCacheAndDisk() {
+    private void saveToDisk(String filePath) {
         try {
-            // add to memory cache
-            BlockCache.instance().putBlock(pcPath.toString(), content);
-
             // save to disk
-            FileUtils.mkParentDir(Paths.get(localFile));
-            File outputFile = new File(localFile);
+            FileUtils.mkParentDir(Paths.get(filePath));
+            File outputFile = new File(filePath);
             try (FileOutputStream fos = new FileOutputStream(outputFile)) {
                 fos.write(content);
             }
         } catch (IOException e ) {
             LOG.error("exception to save to local! localFilePath:{} size:{}",
-                    localFile, content.length, e);
+                    filePath, content.length, e);
         }
     }
 }
