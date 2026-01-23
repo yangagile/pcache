@@ -1,0 +1,12 @@
+# testconfig.yaml
+pms:
+  url: "http://127.0.0.1:8080"
+
+bucket:
+  ak: "unittest"
+  sk: "3ewGHUIayI8cZ8qgAkoJ31gXvGqAzKmmsTLqMhTrhyM="
+  name: "pb-minio"
+  prefix: "test/pcache/go/sdk/"
+
+local:
+  root: "/tmp/pcache/test/pb_minio/"

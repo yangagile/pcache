@@ -245,6 +245,10 @@ func (pb *PBucket) PrintInfo() string {
 	return fmt.Sprintf("Bucket: %s, path: %s", pb.bucket, pb.path)
 }
 
+func (pb *PBucket) GetBlockSize() int64 {
+	return pb.blockSize
+}
+
 func (pb *PBucket) PutObject(ctx context.Context, localPath, objectKey string) (*s3.PutObjectOutput, error) {
 	fileInfo, err := os.Stat(localPath)
 	if err != nil {
