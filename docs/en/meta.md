@@ -8,6 +8,26 @@
 
 4. Parallel bucket information (PBucket), virtual bucket information created on PCache.
 
+### Meta Interface
+You can operate the meta through the PMS service interface. For details of the interfaces, refer to swagger-ui (http://127.0.0.1:8080/swagger-ui/index.html).
+
+1. Add vendor and vendor bucket information via the PMS interface
+   ```
+   // Add Minio vendor information to the system with ak=sts-user, sk=sts-password 
+   curl -X POST "http://127.0.0.1:8080/api/v1/vendor/add" -H "accept: application/json;charset=UTF-8" -H "Content-Type: application/json" -d "{ \"accessKey\": \"sts-user\", \"accessSecret\": \"sts-password\", \"description\": \"description\", \"endpoint\": \"http://127.0.0.1:9000\", \"internalEndpoint\": \"http://127.0.0.1:9000\", \"name\": \"MINIO\", \"region\": \"local\", \"s3Endpoint\": \"http://127.0.0.1:9000\", \"stsEndpoint\": \"http://127.0.0.1:9000\"}"
+
+   // Add the bucket created on Minio to the system, and remember the returned ID.
+   curl -X POST "http://127.0.0.1:8080/api/v1/vendor/bucket/add" -H "accept: application/json;charset=UTF-8"  -H "X-TOKEN: ${PMS_TOKEN}" -H "Content-Type: application/json" -d "{ \"name\": \"minio-test\", \"permission\": \"private\", \"region\": \"local\", \"vendor\": \"MINIO\"}"
+   ```
+
+
+2. Create a PBucket and associate it with the vendor bucket.
+
+   ```
+   // The PBucket name is test-minio, the routing policy is OneRouter (corresponding to one vendor bucket). The bucketIds are the IDs returned when adding the vendor bucket in the previous step. The relationship between the PBucket and the vendor bucket is bound through these IDs.  
+   curl -X POST "http://127.0.0.1:8080/api/v1/pb/add" -H "accept: application/json;charset=UTF-8" -H "Content-Type: application/json" -d "{ \"description\": \"test local minio\", \"name\": \"test-minio\", \"policyPermission\": \"private\", \"policyRouting\": \"{\\\"router\\\":{\\\"type\\\":\\\"OneRouter\\\"},\\\"bucketIds\\\":[1]}\"}"
+   ```
+   
 ### The system supports two Meta storage methods:
 
 1. File (in JSON format)

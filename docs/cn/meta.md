@@ -4,7 +4,28 @@
 3. 云厂商桶信息，在云厂商上创建的数据痛。
 4. 并行痛信息（PBucket），在 PCache上创建的虚拟桶信息。
 
-### 系统支持 2 种 Meta 存储方式。
+### Meta 接口访问
+可通过 PMS 服务接口操作 meta，接口详见 swagger-ui （http://127.0.0.1:8080/swagger-ui/index.html）
+
+1. 通过 PMS 接口添加供应商和供应商 Bucket 信息
+   ```
+   // 添加 Minio 供应商信息到系统 ak=sts-user sk=sts-password
+   curl -X POST "http://127.0.0.1:8080/api/v1/vendor/add" -H "accept: application/json;charset=UTF-8" -H "Content-Type: application/json" -d "{ \"accessKey\": \"sts-user\", \"accessSecret\": \"sts-password\", \"description\": \"description\", \"endpoint\": \"http://127.0.0.1:9000\", \"internalEndpoint\": \"http://127.0.0.1:9000\", \"name\": \"MINIO\", \"region\": \"local\", \"s3Endpoint\": \"http://127.0.0.1:9000\", \"stsEndpoint\": \"http://127.0.0.1:9000\"}"
+
+   // 添加在 Minio 上创建的 Bucket 到系统，并记住返回的 id 号。
+   curl -X POST "http://127.0.0.1:8080/api/v1/vendor/bucket/add" -H "accept: application/json;charset=UTF-8"  -H "X-TOKEN: ${PMS_TOKEN}" -H "Content-Type: application/json" -d "{ \"name\": \"minio-test\", \"permission\": \"private\", \"region\": \"local\", \"vendor\": \"MINIO\"}"
+   ```
+
+
+2. 创建 PBucket, 关联供应商 Bucket。
+
+   ```
+   // PBucket 名称为 test-minio 路由策略是 OneRouter（对应一个供应商bucket），bucketIds 是上步添加供应商bucket 返回的 id，通过 id 绑定 PBucket 和 供应商 Bucket 关系。
+   curl -X POST "http://127.0.0.1:8080/api/v1/pb/add" -H "accept: application/json;charset=UTF-8" -H "Content-Type: application/json" -d "{ \"description\": \"test local minio\", \"name\": \"test-minio\", \"policyPermission\": \"private\", \"policyRouting\": \"{\\\"router\\\":{\\\"type\\\":\\\"OneRouter\\\"},\\\"bucketIds\\\":[1]}\"}"
+   ```
+
+
+### 支持 2 种 Meta 存储方式。
 1. 文件（json格式）
 	可通过一下环境变量配置，
 	```
