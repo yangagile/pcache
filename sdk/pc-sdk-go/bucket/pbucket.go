@@ -452,6 +452,7 @@ func (pb *PBucket) SyncPrefixToFolder(ctx context.Context, prefix, folder string
 				Type:       FILE_TYPE_GET,
 				LocalFile:  localFile,
 				ObjectKey:  *object.Key,
+				ObjectSize: *object.Size,
 				LocalSize:  *object.Size,
 				BlockSize:  pb.blockSize,
 				BlockCount: blockCount,

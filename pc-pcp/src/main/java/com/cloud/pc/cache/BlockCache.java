@@ -16,23 +16,18 @@
 
 package com.cloud.pc.cache;
 
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class BlockCache {
     private final long capacity;
-    private long  size;
+    private final AtomicLong size = new AtomicLong(0);
     private final IEvictionPolicy evictStrategy;
-    private final Map<String, CacheNode> cache;
-    private final ReadWriteLock lock = new ReentrantReadWriteLock();
-    private final Lock readLock = lock.readLock();
-    private final Lock writeLock = lock.writeLock();
-
+    private final ConcurrentHashMap<String, CacheNode> cache;
+    private final ReentrantLock evictionLock = new ReentrantLock();
     private static volatile BlockCache instance;
 
     public static void init(long capacity, IEvictionPolicy strategy) {
@@ -49,70 +44,61 @@ public class BlockCache {
         }
         this.capacity = capacity;
         this.evictStrategy = strategy;
-        this.cache = new HashMap<>();
+        this.cache = new ConcurrentHashMap<>();
     }
 
     public CacheNode getBlock(String blockPath) {
         if (blockPath == null) {
             return null;
         }
-
-        readLock.lock();
-        try {
-            CacheNode node = cache.get(blockPath);
-            if (node != null) {
+        CacheNode node = cache.get(blockPath);
+        if (node != null) {
+            // ReentrantLock
+            evictionLock.lock();
+            try {
                 evictStrategy.access(node);
-
-                return node;
+            } finally {
+                evictionLock.unlock();
             }
-            return null;
-        } finally {
-            readLock.unlock();
+            return node;
         }
+        return null;
     }
 
-    // 放入块数据
+    // put block
     public boolean putBlock(String blockPath, byte[] blockData) {
-        if (blockData == null) {
-            throw new IllegalArgumentException("Block data cannot be null");
-        }
-        if (blockPath == null) {
-            throw new IllegalArgumentException("Block path cannot be null");
+        if (blockData == null || blockPath == null ){
+            throw new IllegalArgumentException();
         }
 
-        writeLock.lock();
+        evictionLock.lock();
         try {
-            // replace old
-            CacheNode existingNode = cache.get(blockPath);
-            if (existingNode != null) {
-                CacheNode newNode = new CacheNode(blockPath, blockData);
-                evictStrategy.insert(newNode);
-                cache.put(blockPath, newNode);
-                size += newNode.blockData.length;
-                evictStrategy.remove(existingNode);
-                size -= existingNode.blockData.length;
-
-                return true;
-            }
-
-            // if it's full, evict blocks
-            while (size >= capacity) {
+            //if it's full, evict blocks
+            while (size.get() + blockData.length > capacity) {
                 CacheNode evictNode = evictStrategy.evict();
                 if (evictNode != null) {
                     cache.remove(evictNode.blockPath);
-                    size -= evictNode.blockData.length;
+                    size.addAndGet(-evictNode.blockData.length);
+                } else {
+                    break;
                 }
             }
 
             // add new
             CacheNode newNode = new CacheNode(blockPath, blockData.clone());
-            cache.put(blockPath, newNode);
-            evictStrategy.insert(newNode);
-            size += newNode.blockData.length;
+            CacheNode oldNode = cache.put(blockPath, newNode);
 
+            if (oldNode != null) {
+                // replace old
+                evictStrategy.remove(oldNode);
+                size.addAndGet(-oldNode.blockData.length);
+            }
+
+            evictStrategy.insert(newNode);
+            size.addAndGet(blockData.length);
             return true;
         } finally {
-            writeLock.unlock();
+            evictionLock.unlock();
         }
     }
 
@@ -120,46 +106,36 @@ public class BlockCache {
         if (blockPath == null) {
             return false;
         }
-        writeLock.lock();
-        try {
-            CacheNode node = cache.remove(blockPath);
-            if (node != null) {
-                size -= node.blockData.length;
+        CacheNode node = cache.remove(blockPath);
+        size.addAndGet(-node.blockData.length);
+        if (node != null) {
+            evictionLock.lock();
+            try {
                 evictStrategy.remove(node);
-                return true;
+            } finally {
+                evictionLock.unlock();
             }
-            return false;
-        } finally {
-            writeLock.unlock();
+            return true;
         }
+        return false;
     }
 
     public void clear() {
-        writeLock.lock();
+        evictionLock.lock();
         try {
             cache.clear();
             evictStrategy.clear();
-            size = 0;
+            size.set(0);
         } finally {
-            writeLock.unlock();
+            evictionLock.unlock();
         }
     }
 
     public Set<String> getCachedBlockPaths() {
-        readLock.lock();
-        try {
-            return new HashSet<>(cache.keySet());
-        } finally {
-            readLock.unlock();
-        }
+        return new HashSet<>(cache.keySet());
     }
 
     public long size() {
-        readLock.lock();
-        try {
-            return size;
-        } finally {
-            readLock.unlock();
-        }
+        return size.get();
     }
 }
