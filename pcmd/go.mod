@@ -2,7 +2,7 @@ module pcmd
 
 go 1.24.6
 
-require github.com/yangagile/pcache/sdk/pc-sdk-go v0.0.0-20260106023228-346c4018bc74
+require github.com/yangagile/pcache/sdk/pc-sdk-go v0.0.0-20260130080458-a15ac72b6df0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.36.3 // indirect
