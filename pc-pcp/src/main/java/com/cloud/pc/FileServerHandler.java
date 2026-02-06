@@ -17,26 +17,20 @@
 package com.cloud.pc;
 
 import com.cloud.pc.config.Envs;
-import com.cloud.pc.model.CacheLayer;
-import com.cloud.pc.model.PcPath;
-import com.cloud.pc.model.StsInfo;
 import com.cloud.pc.task.GetTask;
 import com.cloud.pc.task.PutTask;
-import com.cloud.pc.utils.*;
 
 import io.netty.channel.*;
 import io.netty.handler.codec.http.*;
 import io.netty.util.concurrent.DefaultThreadFactory;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.services.s3.S3Client;
 
-import java.util.Map;
 import java.util.concurrent.*;
 
 import static com.cloud.pc.utils.HttpHelper.sendError;
-import static io.netty.handler.codec.http.HttpMethod.*;
+import static io.netty.handler.codec.http.HttpMethod.GET;
+import static io.netty.handler.codec.http.HttpMethod.POST;
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 
 public class FileServerHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
@@ -47,52 +41,6 @@ public class FileServerHandler extends SimpleChannelInboundHandler<FullHttpReque
                     new LinkedBlockingQueue<>(Envs.linkedBlockingQueueSize),
                     new DefaultThreadFactory("File-Thread"));
 
-    private void getFile(ChannelHandlerContext ctx,  FullHttpRequest request, String localFile, PcPath pcPath) {
-        String sts = request.headers().get("X-STS");
-        StsInfo stsInfo = null;
-        S3Client s3Client = null;
-        if (StringUtils.isNotBlank(sts)) {
-            stsInfo = JsonUtils.fromJson(sts, StsInfo.class);
-            s3Client = S3ClientCache.buildS3Client(stsInfo, false);
-        }
-        long size = Long.parseLong(request.headers().get("X-DATA-SIZE"));
-        long blockSize = Long.parseLong(request.headers().get("X-BLOCK-SIZE"));
-        long offset = Long.parseLong(request.headers().get("X-BLOCK-OFFSET"));
-        GetTask getTask = new GetTask(ctx, request, s3Client, stsInfo, localFile, pcPath, size, blockSize, offset);
-        fileExecutor.submit(getTask);
-    }
-
-    private void putFile(ChannelHandlerContext ctx, FullHttpRequest request, String localFile, PcPath pcPath) {
-
-        byte[] fileContent = new byte[request.content().readableBytes()];
-        request.content().readBytes(fileContent);
-        long expectedLength = Integer.parseInt(request.headers().get("Content-Length"));
-        if (fileContent.length != expectedLength) {
-            LOG.error("expected length:{}, received length: {} for file {}",
-                    expectedLength, fileContent.length, pcPath);
-            throw new RuntimeException("invalid length");
-        }
-        String sts = request.headers().get("X-STS");
-        StsInfo stsInfo = JsonUtils.fromJson(sts, StsInfo.class);
-        String strUserMeta = request.headers().get("X-USER-META");
-        Map<String, String> userMetas = null;
-        if (StringUtils.isNotBlank(strUserMeta)) {
-            userMetas = JsonUtils.fromJson(strUserMeta, Map.class);
-        }
-        String uploadId = request.headers().get("X-UPLOAD-ID");
-        String strWriteLayer = request.headers().get("X-WRITE-LAYER");
-        CacheLayer cacheLayer;
-        if (StringUtils.isNotBlank(strWriteLayer)) {
-            cacheLayer = new CacheLayer(Integer.parseInt(strWriteLayer));
-        } else {
-            cacheLayer = new CacheLayer(CacheLayer.ALL);
-        }
-        S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
-        PutTask putTask = new PutTask(ctx, fileContent, s3Client, stsInfo, localFile, pcPath,
-                uploadId, userMetas, cacheLayer);
-        fileExecutor.submit(putTask);
-    }
-
     @Override
     public void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) {
         LOG.debug("new request from ip={} uri={}", ctx.channel().remoteAddress().toString(), request.uri());
@@ -102,22 +50,17 @@ public class FileServerHandler extends SimpleChannelInboundHandler<FullHttpReque
             return;
         }
         try {
-            final String fileKey = request.uri();
-            if (StringUtils.isBlank(fileKey)) {
-                LOG.error("[request] uri={} is not allowed", fileKey);
-                sendError(ctx, FORBIDDEN);
-                return;
-            }
-            final String localFilePath = HttpHelper.sanitizeUri(fileKey);
-            PcPath pcPath = new PcPath(fileKey);
+            // create task
+            Runnable task;
             if (request.method() == GET) {
-                getFile(ctx, request, localFilePath, pcPath);
+                task = new GetTask(ctx, request);
             } else if (request.method() == POST) {
-                putFile(ctx, request, localFilePath, pcPath);
+                task = new PutTask(ctx, request);
             } else {
                 LOG.error("[request]method{} is not allowed", request.method());
-                sendError(ctx, METHOD_NOT_ALLOWED);
+                return;
             }
+            fileExecutor.submit(task);
         }catch (RejectedExecutionException e) {
             sendError(ctx, HttpResponseStatus.TOO_MANY_REQUESTS);
         } catch (Exception e) {

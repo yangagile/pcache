@@ -18,9 +18,7 @@ package com.cloud.pc.task;
 
 import com.cloud.pc.cache.BlockCache;
 import com.cloud.pc.cache.CacheNode;
-import com.cloud.pc.model.PcPath;
 import com.cloud.pc.model.PcpBlockStatus;
-import com.cloud.pc.model.StsInfo;
 import com.cloud.pc.stats.BlockCounter;
 import com.cloud.pc.utils.*;
 import io.netty.buffer.ByteBuf;
@@ -42,31 +40,21 @@ import java.nio.file.Paths;
 import static com.cloud.pc.utils.HttpHelper.sendError;
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
 
-public class GetTask implements Runnable {
+public class GetTask extends BaseTask {
     private static final Logger LOG = LoggerFactory.getLogger(GetTask.class);
 
-    private ChannelHandlerContext ctx;
-    private FullHttpRequest request;
-    private S3Client s3Client;
-    private StsInfo stsInfo;
-    private String localFile;
-    private PcPath pcPath;
-    private long size;
+    private long dataSize;
     private long blockSize;
     private long offset;
 
-    public GetTask(ChannelHandlerContext ctx, FullHttpRequest request, S3Client s3Client, StsInfo stsInfo,
-                   String localFile, PcPath pcPath, long size, long blockSize, long offset) {
-        this.ctx = ctx;
-        this.request = request;
-        this.s3Client = s3Client;
-        this.stsInfo = stsInfo;
-        this.localFile = localFile;
-        this.pcPath = pcPath;
-        this.blockSize = blockSize;
-        this.size = size;
-        this.offset = offset;
+    public GetTask(ChannelHandlerContext ctx, FullHttpRequest request) {
+        super(ctx,request);
+
+        dataSize = Long.parseLong(request.headers().get("X-DATA-SIZE"));
+        blockSize = Long.parseLong(request.headers().get("X-BLOCK-SIZE"));
+        offset = Long.parseLong(request.headers().get("X-BLOCK-OFFSET"));
     }
+
     @Override
     public void run() {
         HttpResponse response = new DefaultHttpResponse(
@@ -74,9 +62,6 @@ public class GetTask implements Runnable {
                 HttpResponseStatus.OK
         );
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/octet-stream");
-        if (HttpUtil.isKeepAlive(request)) {
-            response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-        }
 
         // try from memory cache
         CacheNode block = BlockCache.instance().getBlock(pcPath.toString());
@@ -125,11 +110,11 @@ public class GetTask implements Runnable {
         final ByteBuf buf;
         final int contentLength;
 
-        if (size == 0 || (offset == 0 && size == blockData.length)) {
+        if (dataSize == 0 || (offset == 0 && dataSize == blockData.length)) {
             buf = Unpooled.wrappedBuffer(blockData);
             contentLength = blockData.length;
         } else {
-            contentLength = (int)Math.min(size, blockData.length-offset);
+            contentLength = (int)Math.min(dataSize, blockData.length-offset);
             buf = Unpooled.wrappedBuffer(blockData, (int) offset, contentLength);
         }
 
@@ -149,9 +134,9 @@ public class GetTask implements Runnable {
         LOG.debug("[readFromLocal] block={} file={}", pcPath, localFile);
         try {
             byte[] fileData = Files.readAllBytes(Paths.get(localFile));
-            if (size !=0 && fileData.length != size) {
+            if (dataSize !=0 && fileData.length != dataSize) {
                 LOG.error("[readFromLocal] failed to read block {} from local {} read size {} of {}",
-                        pcPath, localFile, fileData.length, size);
+                        pcPath, localFile, fileData.length, dataSize);
                 return null;
             }
             return fileData;
@@ -167,8 +152,7 @@ public class GetTask implements Runnable {
         try (FileOutputStream fos = new FileOutputStream(localFile)) {
             fos.write(blockData);
         } catch (IOException e) {
-            LOG.error("[saveToLocal] exception to save block {} to local file {}",
-                    pcPath, localFile, e);
+            LOG.error("[saveToLocal] exception to save block {} to local file {}", pcPath, localFile, e);
         }
     }
 
@@ -190,6 +174,7 @@ public class GetTask implements Runnable {
                     .range(range)
                     .build();
         }
+        S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
         ResponseInputStream<GetObjectResponse> res = s3Client.getObject(
                 getObjectRequest, ResponseTransformer.toInputStream());
         if (!S3Utils.isGetObjectSuccessful(res)) {

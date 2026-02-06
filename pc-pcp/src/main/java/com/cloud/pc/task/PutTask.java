@@ -18,12 +18,14 @@ package com.cloud.pc.task;
 
 import com.cloud.pc.cache.BlockCache;
 import com.cloud.pc.model.CacheLayer;
-import com.cloud.pc.model.PcPath;
-import com.cloud.pc.model.StsInfo;
 import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.HttpHelper;
+import com.cloud.pc.utils.JsonUtils;
+import com.cloud.pc.utils.S3ClientCache;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -41,29 +43,34 @@ import java.util.Map;
 
 import static com.cloud.pc.utils.HttpHelper.sendError;
 
-public class PutTask implements Runnable {
+public class PutTask extends BaseTask {
     private static final Logger LOG = LoggerFactory.getLogger(PutTask.class);
-    private ChannelHandlerContext ctx;
-    private byte[] content;
-    private S3Client s3Client;
-    private StsInfo stsInfo;
-    private PcPath pcPath;
-    private String localFile;
-    private String uploadId;
-    private Map<String, String> userMetas;
-    CacheLayer cacheLayer;
 
-    public PutTask(ChannelHandlerContext ctx, byte[] content, S3Client s3Client, StsInfo stsInfo,
-                   String localFile, PcPath pcPath, String uploadId, Map<String, String> userMetas, CacheLayer cacheLayer) {
-        this.ctx = ctx;
-        this.content = content;
-        this.s3Client = s3Client;
-        this.stsInfo = stsInfo;
-        this.localFile = localFile;
-        this.pcPath = pcPath;
-        this.uploadId = uploadId;
-        this.userMetas = userMetas;
-        this.cacheLayer = cacheLayer;
+    public byte[] blockData;
+    public Map<String, String> userMetas;
+    public String uploadId;
+    public CacheLayer cacheLayer;
+
+    public PutTask(ChannelHandlerContext ctx, FullHttpRequest request) {
+        super(ctx,request);
+
+        blockData = new byte[request.content().readableBytes()];
+        request.content().readBytes(blockData);
+        long expectedLength = Integer.parseInt(request.headers().get("Content-Length"));
+        if (blockData.length != expectedLength) {
+            throw new RuntimeException("invalid content length");
+        }
+        String strUserMeta = request.headers().get("X-USER-META");
+        if (StringUtils.isNotBlank(strUserMeta)) {
+            userMetas = JsonUtils.fromJson(strUserMeta, Map.class);
+        }
+        uploadId = request.headers().get("X-UPLOAD-ID");
+        String strWriteLayer = request.headers().get("X-WRITE-LAYER");
+        if (StringUtils.isNotBlank(strWriteLayer)) {
+            cacheLayer = new CacheLayer(Integer.parseInt(strWriteLayer));
+        } else {
+            cacheLayer = new CacheLayer(CacheLayer.ALL);
+        }
     }
 
     @Override
@@ -71,7 +78,7 @@ public class PutTask implements Runnable {
         int retryCount = 3;
         while (retryCount > 0) {
             try {
-                BlockCache.instance().putBlock(pcPath.toString(), content);
+                BlockCache.instance().putBlock(pcPath.toString(), blockData);
                 if (cacheLayer.maxLayer() == CacheLayer.MEMORY) {
                     ctx.executor().execute(() -> {
                         HttpHelper.sendResponse(ctx, HttpResponseStatus.OK, "memory");
@@ -90,12 +97,12 @@ public class PutTask implements Runnable {
                 if (pcPath.isSingleFile()) {
                     eTag = uploadFullFile();
                     LOG.debug("successfully to put key:{} size:{} retryCount:{} return etag:{}",
-                            pcPath.getKey(), content.length, retryCount, eTag);
+                            pcPath.getKey(), blockData.length, retryCount, eTag);
                 } else {
                     eTag = uploadPart();
                     LOG.debug("successfully to put key:{} number:{}/{} size{} uploadId:{} retryCount:{} return etag:{}",
-                            pcPath.getKey(), pcPath.getNumber(), pcPath.getTotalNumber(), content.length,
-                            uploadId, retryCount, eTag);
+                            pcPath.getKey(), pcPath.getNumber(), pcPath.getTotalNumber(),
+                            blockData.length, uploadId, retryCount, eTag);
                 }
 
                 // response to client and back to EventLoop thread
@@ -106,7 +113,8 @@ public class PutTask implements Runnable {
                 }
                 return;
             } catch (Exception e) {
-                LOG.error("exception to put {} size{} retryCount:{}", pcPath, content.length, retryCount, e);
+                LOG.error("exception to put {} size{} retryCount:{}",
+                        pcPath, blockData.length, retryCount, e);
                 retryCount--;
             }
         }
@@ -123,9 +131,10 @@ public class PutTask implements Runnable {
                 .partNumber((int)pcPath.getNumber()+1)
                 .build();
 
+        S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
         UploadPartResponse response = s3Client.uploadPart(
                 uploadRequest,
-                RequestBody.fromBytes(content)
+                RequestBody.fromBytes(blockData)
         );
         return response.eTag();
     }
@@ -133,11 +142,12 @@ public class PutTask implements Runnable {
     private String uploadFullFile() {
         PutObjectRequest.Builder builder = PutObjectRequest.builder();
         PutObjectRequest putObjectRequest = builder.bucket(stsInfo.getBucketName())
-                .contentLength((long)(content.length))
+                .contentLength((long)(blockData.length))
                 .metadata(userMetas)
                 .key(pcPath.getKey()).build();
 
-        RequestBody requestBody = RequestBody.fromBytes(content);
+        S3Client s3Client = S3ClientCache.buildS3Client(stsInfo, false);
+        RequestBody requestBody = RequestBody.fromBytes(blockData);
             PutObjectResponse response = s3Client.putObject(putObjectRequest, requestBody);
         return response.eTag();
     }
@@ -148,11 +158,11 @@ public class PutTask implements Runnable {
             FileUtils.mkParentDir(Paths.get(filePath));
             File outputFile = new File(filePath);
             try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-                fos.write(content);
+                fos.write(blockData);
             }
         } catch (IOException e ) {
             LOG.error("exception to save to local! localFilePath:{} size:{}",
-                    filePath, content.length, e);
+                    filePath, blockData.length, e);
         }
     }
 }
