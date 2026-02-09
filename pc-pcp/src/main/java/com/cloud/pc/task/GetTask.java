@@ -25,6 +25,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.*;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.ResponseInputStream;
@@ -52,7 +53,13 @@ public class GetTask extends BaseTask {
 
         dataSize = Long.parseLong(request.headers().get("X-DATA-SIZE"));
         blockSize = Long.parseLong(request.headers().get("X-BLOCK-SIZE"));
-        offset = Long.parseLong(request.headers().get("X-BLOCK-OFFSET"));
+
+        String strOffSet = request.headers().get("X-BLOCK-OFFSET");
+        if (StringUtils.isNotBlank(strOffSet)) {
+            offset = Long.parseLong(strOffSet);
+        } else {
+            offset = 0;
+        }
     }
 
     @Override

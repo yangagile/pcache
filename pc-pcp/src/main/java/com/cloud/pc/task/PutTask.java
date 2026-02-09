@@ -161,8 +161,7 @@ public class PutTask extends BaseTask {
                 fos.write(blockData);
             }
         } catch (IOException e ) {
-            LOG.error("exception to save to local! localFilePath:{} size:{}",
-                    filePath, blockData.length, e);
+            LOG.error("exception to save to local! localFilePath:{} size:{}", filePath, blockData.length, e);
         }
     }
 }

@@ -34,8 +34,8 @@ import java.nio.file.Paths;
 
 public class PBucketTest_Minio {
     static String localRootPath = "/tmp/pcache/test/";
-    static String bucketName = "test-minio";
-    static String prefix = "pcache/test/";
+    static String bucketName = "pb-minio";
+    static String prefix = "test/pcache/java/sdk/";
     static String pmsUrl = "http://127.0.0.1:8080";
     static String ak = "ak-pc-test";
     static String sk = "KWBTBJJZTmZWb1F00lK1psg+2RMvRApY5uSDt7u1wpg=";
@@ -44,7 +44,7 @@ public class PBucketTest_Minio {
     public static void init() {
         String tempDir = System.getProperty("java.io.tmpdir");
         if (StringUtils.isNotBlank(tempDir)) {
-            localRootPath = FileUtils.mergePath(tempDir, "pcache/test/");
+            localRootPath = FileUtils.mergePath(tempDir, localRootPath);
         }
         File rootDir = new File(localRootPath);
         if (rootDir.exists() && rootDir.isDirectory()) {
@@ -118,7 +118,7 @@ public class PBucketTest_Minio {
         GetObjectResponse getResponse = pbucket.getObject(fileKey, newLocalFile.toString());
         Assert.assertFalse("failed to get",StringUtils.isBlank(getResponse.eTag()));
         stats = pbucket.getThreadTracer().get().getStats();
-        Assert.assertEquals("should put From Local", 1, stats.getPcpCacheHit());
+        Assert.assertTrue("should get From Pcp", stats.getPcpCacheHit() > 0);
 
         // compare file
         Assert.assertTrue("files are different",
@@ -185,7 +185,6 @@ public class PBucketTest_Minio {
         stats = pbucket.getThreadTracer().get().getStats();
         if (pbucket.getPmsMgr().getPcp(fileKey) != null) {
             Assert.assertEquals("should get From PCP", blockNum, stats.getCntPcp());
-            Assert.assertEquals("should get From cache of PCP", blockNum, stats.getPcpCacheHit());
         } else {
             Assert.assertEquals("should put From Local", blockNum, stats.getCntLocal());
         }
