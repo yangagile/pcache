@@ -52,22 +52,11 @@ func Test_PutGet_SmallFileFromPcp(t *testing.T) {
 		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
 	}
 	stat := bucket.GetOptions(ctx).BlockStats
-	if stat.CountPcpDisk <= 0 {
-		t.Fatalf("failed to put from PCP disk")
+	if stat.GetPcpHitCount() != 1 {
+		t.Fatalf("invalid PCP hit count, expect:1, but got:%d", stat.GetPcpHitCount())
 	}
 
-	// test skip existing key for put
-	bucket.GetOptions(ctx).SkipExisting = true
-	_, err = pb.PutObject(ctx, localFilePath, fileKey)
-	if err != nil {
-		t.Fatalf("failed to file:%v with err:%v", fileName, err)
-	}
-	fstats := bucket.GetOptions(ctx).FileStats
-	if fstats.CountSkipExisting != 1 {
-		t.Fatalf("failed to skip existing key")
-	}
-
-	// get file
+	// get file, will hit the memory cache
 	ctx = bucket.WithOptions(context.Background())
 	downloadPath := utils.MergePath(cfg.Local.Root, fileName)
 	_, err = pb.GetObject(ctx, fileKey, downloadPath)
@@ -78,19 +67,6 @@ func Test_PutGet_SmallFileFromPcp(t *testing.T) {
 	if stat.CountPcpMemory <= 0 {
 		t.Fatalf("failed to get from PCP memeory")
 	}
-
-	// test skip to get if local file is existing
-	ctx = bucket.WithOptions(context.Background())
-	bucket.GetOptions(ctx).SkipExisting = true
-	_, err = pb.GetObject(ctx, fileKey, downloadPath)
-	if err != nil {
-		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
-	}
-	fstats = bucket.GetOptions(ctx).FileStats
-	if fstats.CountSkipExisting != 1 {
-		t.Fatalf("failed to skip existing key")
-	}
-	os.Remove(downloadPath)
 }
 
 func Test_PutGet_SmallFileOption(t *testing.T) {
@@ -109,6 +85,8 @@ func Test_PutGet_SmallFileOption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create local file:%v with err:%v", localFilePath, err)
 	}
+	defer os.Remove(localFilePath)
+
 	fileKey := utils.MergePath(cfg.Bucket.Prefix, fileName)
 	downloadPath := utils.MergePath(cfg.Local.Root, fileName)
 

@@ -51,8 +51,8 @@ func Test_PutGet_SmallFileWithoutPcp(t *testing.T) {
 		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
 	}
 	stat := bucket.GetOptions(ctx).BlockStats
-	if stat.CountLocal <= 0 {
-		t.Fatalf("failed to put from local")
+	if stat.CountLocal != 1 {
+		t.Fatalf("invalid CountLocal for get, expect:1, but got:%d", stat.CountLocal)
 	}
 
 	// get file
@@ -62,9 +62,14 @@ func Test_PutGet_SmallFileWithoutPcp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
 	}
-	stat = bucket.GetOptions(ctx).BlockStats
-	if stat.CountLocal <= 0 {
-		t.Fatalf("failed to put from local")
+	// verify file content
+	if !utils.CompareFiles(localFilePath, downloadPath) {
+		t.Fatalf("download file:%s is diff with origin file:%s", downloadPath, localFilePath)
 	}
-	os.Remove(downloadPath)
+
+	// verify block stats
+	stat = bucket.GetOptions(ctx).BlockStats
+	if stat.CountLocal != 1 {
+		t.Fatalf("invalid CountLocal for put, expect:1, but got:%d", stat.CountLocal)
+	}
 }

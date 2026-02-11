@@ -18,8 +18,11 @@ package test
 
 import (
 	"context"
+	"errors"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/bucket"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
+	"os"
 	"testing"
 )
 
@@ -41,10 +44,11 @@ func Test_Delete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create local file:%v with err:%v", localFilePath, err)
 	}
+	defer os.Remove(localFilePath)
 
 	// delete not existing object will return nil
 	fileKey := utils.MergePath(cfg.Bucket.Prefix, fileName)
-	_, err = pb.DeleteObject(ctx, fileKey+"no_this_key_wosldfsafa")
+	_, err = pb.DeleteObject(ctx, fileKey+"no_this_key_wosldfsafaa")
 	if err != nil {
 		t.Fatalf("failed to delete object key:%v with err:%v", fileKey, err)
 	}
@@ -55,6 +59,12 @@ func Test_Delete(t *testing.T) {
 		t.Fatalf("failed to put file:%v with err:%v", fileName, err)
 	}
 
+	// the file should exist
+	_, err = pb.HeadObject(ctx, fileKey)
+	if err != nil {
+		t.Fatalf("failed to put object key:%v, the object is not existing", fileKey)
+	}
+
 	// delete the object
 	_, err = pb.DeleteObject(ctx, fileKey)
 	if err != nil {
@@ -63,7 +73,12 @@ func Test_Delete(t *testing.T) {
 
 	// the object should not exist
 	_, err = pb.HeadObject(ctx, fileKey)
-	if err == nil {
+	if !isNotFoundError(err) {
 		t.Fatalf("failed to delete object key:%v, the object is still existing", fileKey)
 	}
+}
+
+func isNotFoundError(err error) bool {
+	var notFoundErr *types.NotFound
+	return errors.As(err, &notFoundErr)
 }

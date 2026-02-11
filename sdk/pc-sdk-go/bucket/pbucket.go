@@ -249,6 +249,26 @@ func (pb *PBucket) GetBlockSize() int64 {
 	return pb.blockSize
 }
 
+func (pb *PBucket) GetBlockWorkerChanSize() int {
+	return pb.blockWorkerChanSize
+}
+
+func (pb *PBucket) GetBlockWorkerThreadNumber() int {
+	return pb.blockWorkerThreadNumber
+}
+
+func (pb *PBucket) GetFileTaskThreadNumber() int {
+	return pb.fileTaskThreadNumber
+}
+
+func (pb *PBucket) GetStsTls() int64 {
+	return pb.stsTtlSec
+}
+
+func (pb *PBucket) GetPcpTls() int64 {
+	return pb.pcpTtlSec
+}
+
 func (pb *PBucket) PutObject(ctx context.Context, localPath, objectKey string) (*s3.PutObjectOutput, error) {
 	fileInfo, err := os.Stat(localPath)
 	if err != nil {
@@ -397,7 +417,7 @@ func (pb *PBucket) SyncFolderToPrefix(ctx context.Context, folder, prefix string
 	return err
 }
 
-func (pb *PBucket) GetObjectRange(ctx context.Context, objectKey string, offset int64, buf []byte) (int64, error) {
+func (pb *PBucket) GetObjectRange(ctx context.Context, objectKey string, objectSize int64, offset int64, buf []byte) (int64, error) {
 	fileTask := &FileTask{
 		S3Client:   pb.getS3Client(),
 		Sts:        pb.getStsInfo(),
@@ -407,6 +427,7 @@ func (pb *PBucket) GetObjectRange(ctx context.Context, objectKey string, offset 
 		DataBuffer: buf,
 		ObjectKey:  objectKey,
 		BlockSize:  pb.blockSize,
+		BlockCount: (objectSize + pb.blockSize - 1) / pb.blockSize,
 		Stats:      BSTATE_FAIL,
 	}
 	fileMgr := NewSingleFileManager(pb)

@@ -42,11 +42,20 @@ func Test_syncFolder(t *testing.T) {
 	folder := utils.MergePath(cfg.Local.Root, utils.GetCurrentFunctionName())
 	fileSize := int64(1 * 1024) // 10MB
 	fileNumber := 10
+	fileMD5Map := make(map[string]string)
 	for i := 0; i < fileNumber; i++ {
-		_, err = utils.CreateTestFile(folder, fmt.Sprintf("f_%05d.dat", i), fileSize)
+		filePath, err := utils.CreateTestFile(folder, fmt.Sprintf("f_%05d.dat", i), fileSize)
+		if err != nil {
+			t.Fatalf("failed to create local file:%v with err:%v", fmt.Sprintf("f_%05d.dat", i), err)
+		}
+		md5Value, err := utils.GetMD5Base64FromFile(filePath)
+		if err != nil {
+			t.Fatalf("failed to get md5 value for local file:%v with err:%v", filePath, err)
+		}
+		fileMD5Map[filePath] = md5Value
 	}
 
-	// sync to Bucket from local
+	// sync to bucket from local
 	prefix := utils.MergePath(cfg.Bucket.Prefix, utils.GetCurrentFunctionName())
 	err = pb.SyncFolderToPrefix(ctx, folder, prefix)
 	if err != nil {
@@ -56,7 +65,7 @@ func Test_syncFolder(t *testing.T) {
 		t.Fatalf("failed to sync folder:%v to prefix:%v", folder, prefix)
 	}
 
-	//clean source
+	//clean folder
 	err = os.RemoveAll(folder)
 	if err != nil {
 		panic(fmt.Errorf("failed to delete test root path %v: %v", folder, err))
@@ -68,8 +77,19 @@ func Test_syncFolder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to sync prefix:%v to folder:%v ", prefix, folder)
 	}
+	defer os.RemoveAll(folder)
+
 	if bucket.GetOptions(ctx).FileStats.CountOk != int64(fileNumber) {
 		t.Fatalf("failed to sync prefix:%v to folder:%v ", prefix, folder)
 	}
-	defer os.RemoveAll(folder)
+	// verify folder content
+	for path, hash := range fileMD5Map {
+		md5Value, err := utils.GetMD5Base64FromFile(path)
+		if err != nil {
+			t.Fatalf("failed to get md5 value for local file:%v with err:%v", path, err)
+		}
+		if hash != md5Value {
+			t.Fatalf("failed to sync prefix:%v to folder:%v ", prefix, folder)
+		}
+	}
 }

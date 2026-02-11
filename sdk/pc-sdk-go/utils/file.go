@@ -176,9 +176,64 @@ func EnsureParentDir(filePath string) error {
 	return os.MkdirAll(parentDir, 0755)
 }
 
-func CleanDirFromTempDir(directoryPath string) error {
-	if strings.HasPrefix(directoryPath, os.TempDir()) {
-		return os.RemoveAll(directoryPath)
+func CompareFiles(file1, file2 string) bool {
+	// 1. compare size
+	info1, err := os.Stat(file1)
+	if err != nil {
+		return false
 	}
-	return nil
+	info2, err := os.Stat(file2)
+	if err != nil {
+		return false
+	}
+	if info1.Size() != info2.Size() {
+		return false
+	}
+
+	// compare content
+	f1, err := os.Open(file1)
+	if err != nil {
+		return false
+	}
+	defer f1.Close()
+
+	f2, err := os.Open(file2)
+	if err != nil {
+		return false
+	}
+	defer f2.Close()
+
+	const bufferSize = 64 * 1024 // 64KB
+	buf1 := make([]byte, bufferSize)
+	buf2 := make([]byte, bufferSize)
+
+	for {
+		n1, err1 := f1.Read(buf1)
+		n2, err2 := f2.Read(buf2)
+
+		if n1 != n2 || err1 != err2 {
+			return false
+		}
+
+		if !BytesEqual(buf1[:n1], buf2[:n2]) {
+			return false
+		}
+		if err1 == io.EOF {
+			break
+		}
+	}
+
+	return true
+}
+
+func BytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

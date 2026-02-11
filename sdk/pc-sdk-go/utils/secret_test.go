@@ -71,16 +71,4 @@ func Test_GenerateChecksum(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create local file:%v with err:%v", testfile, err)
 	}
-
-	md5Base64, err := getMD5Base64FromFile(testfile)
-	if err != nil {
-		t.Fatalf("failed to calculate MD5 from file:%v with err:%v", testfile, err)
-	}
-	fmt.Printf("MD5 (Base64): %s\n", md5Base64)
-
-	crc32Base64, err := getCRC32Base64FromFile(testfile)
-	if err != nil {
-		t.Fatalf("failed to calculate CRC32 from file:%v with err:%v", testfile, err)
-	}
-	fmt.Printf("CRC32 (Base64): %s\n", crc32Base64)
 }

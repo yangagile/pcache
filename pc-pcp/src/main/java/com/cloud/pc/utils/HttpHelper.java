@@ -24,7 +24,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.*;
 import io.netty.util.CharsetUtil;
 
-import javax.activation.MimetypesFileTypeMap;
 import java.io.File;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
@@ -104,10 +103,12 @@ public class HttpHelper {
         // Convert to absolute path.
         return FileUtils.mergePath(Envs.dataDir, uri);
     }
-    public static void sendResponse(ChannelHandlerContext ctx, HttpResponseStatus status, String message) {
+    public static void sendResponse(ChannelHandlerContext ctx, HttpResponseStatus status,
+                                    int hitType, String message) {
         FullHttpResponse response = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, status, Unpooled.copiedBuffer(message, CharsetUtil.UTF_8));
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
+        response.headers().set("X-CACHE-HIT", hitType);
         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }
 }

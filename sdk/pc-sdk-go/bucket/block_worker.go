@@ -175,6 +175,15 @@ func (w *BlockWorker) putToPcp(block *Block, stsInfo *StsInfo, buffer []byte) (s
 	if err != nil {
 		return "", err
 	}
+	if cacheHit := resp.Header.Get("X-CACHE-HIT"); cacheHit != "" {
+		hitCount, err := strconv.Atoi(cacheHit)
+		if err == nil {
+			block.State = hitCount
+		} else {
+			log.WithError(err).WithField(" X-CACHE-HIT", hitCount).
+				Errorln("invalid format of X-CACHE-HIT")
+		}
+	}
 
 	return string(bytes.TrimSpace(etagBytes)), nil
 }
@@ -247,7 +256,6 @@ func (w *BlockWorker) PutBlock(block *Block) error {
 			// will try to put from local
 			block.State = BSTATE_OK_LOCAL_PCP_FAIL
 		} else {
-			block.State = BSTATE_OK_PCP_DISK
 			if options.DebugMode {
 				log.WithField("PcpHost", block.PcpHost).WithField("block", block.GetPcPath()).
 					Infoln("successfully put block to PCP")
@@ -295,7 +303,7 @@ func (w *BlockWorker) getFromPcp(blockInfo *Block, stsInfo *StsInfo) error {
 	req.Header.Set("X-STS", string(stsJson))
 	req.Header.Set("X-BLOCK-SIZE", strconv.FormatInt(blockInfo.BlockSize, 10))
 	req.Header.Set("X-DATA-SIZE", strconv.FormatInt(blockInfo.Size, 10))
-	req.Header.Set("X-BLOCK-OFFSET", strconv.FormatInt(blockInfo.File.Offset, 10))
+	req.Header.Set("X-BLOCK-OFFSET", strconv.FormatInt(blockInfo.OffsetInBlock, 10))
 
 	// request
 	resp, err := w.client.Do(req)

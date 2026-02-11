@@ -77,6 +77,10 @@ func (s *BlockStats) GetAverageTime() int64 {
 	return 0
 }
 
+func (s *BlockStats) GetPcpHitCount() int64 {
+	return s.CountPcpRemote + s.CountPcpDisk + s.CountPcpMemory
+}
+
 type FileStats struct {
 	CountTotal         int64
 	CountFail          int64

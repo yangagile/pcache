@@ -18,6 +18,7 @@ package com.cloud.pc.task;
 
 import com.cloud.pc.cache.BlockCache;
 import com.cloud.pc.model.CacheLayer;
+import com.cloud.pc.model.PcpBlockStatus;
 import com.cloud.pc.utils.FileUtils;
 import com.cloud.pc.utils.HttpHelper;
 import com.cloud.pc.utils.JsonUtils;
@@ -81,7 +82,8 @@ public class PutTask extends BaseTask {
                 BlockCache.instance().putBlock(pcPath.toString(), blockData);
                 if (cacheLayer.maxLayer() == CacheLayer.MEMORY) {
                     ctx.executor().execute(() -> {
-                        HttpHelper.sendResponse(ctx, HttpResponseStatus.OK, "memory");
+                        HttpHelper.sendResponse(ctx, HttpResponseStatus.OK,
+                                PcpBlockStatus.HIT_MEMORY.getValue(), "memory");
                     });
                 }
 
@@ -89,7 +91,8 @@ public class PutTask extends BaseTask {
                 saveToDisk(localFile);
                 if (cacheLayer.maxLayer() == CacheLayer.DISK) {
                     ctx.executor().execute(() -> {
-                        HttpHelper.sendResponse(ctx, HttpResponseStatus.OK, "disk");
+                        HttpHelper.sendResponse(ctx, HttpResponseStatus.OK,
+                                PcpBlockStatus.HIT_DISK.getValue(), "disk");
                     });
                 }
 
@@ -108,7 +111,8 @@ public class PutTask extends BaseTask {
                 // response to client and back to EventLoop thread
                 if (cacheLayer.maxLayer() == CacheLayer.REMOTE) {
                     ctx.executor().execute(() -> {
-                        HttpHelper.sendResponse(ctx, HttpResponseStatus.OK, eTag);
+                        HttpHelper.sendResponse(ctx, HttpResponseStatus.OK,
+                                PcpBlockStatus.HIT_REMOTE.getValue(), eTag);
                     });
                 }
                 return;

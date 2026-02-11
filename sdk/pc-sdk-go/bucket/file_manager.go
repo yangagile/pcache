@@ -255,6 +255,7 @@ func (m *FileManager) GetFile(ctx context.Context, fileTask *FileTask) error {
 
 	remaining := int64(0)
 	currentOffset := int64(0)
+	blockCount := int64(0)
 	if fileTask.IsLocalFile() {
 		if fileTask.BlockCount == 0 {
 			if options.IsSmallFile {
@@ -307,6 +308,7 @@ func (m *FileManager) GetFile(ctx context.Context, fileTask *FileTask) error {
 		} else {
 			remaining = fileTask.BlockSize * fileTask.BlockCount
 		}
+		blockCount = fileTask.BlockCount
 	} else {
 		// download to buffer
 		currentOffset = fileTask.Offset
@@ -314,10 +316,10 @@ func (m *FileManager) GetFile(ctx context.Context, fileTask *FileTask) error {
 
 		inBlockStart := currentOffset / fileTask.BlockSize
 		inBlockEnd := (currentOffset + remaining) / fileTask.BlockSize
-		fileTask.BlockCount = inBlockEnd - inBlockStart + 1
+		blockCount = inBlockEnd - inBlockStart + 1
 	}
 	var wg sync.WaitGroup
-	wg.Add(int(fileTask.BlockCount))
+	wg.Add(int(blockCount))
 	fileTask.Wg = &wg
 	fileTask.Ctx = &ctx
 
@@ -356,21 +358,21 @@ func (m *FileManager) GetFile(ctx context.Context, fileTask *FileTask) error {
 
 	wg.Wait()
 	stats := options.BlockStats
+	for i := 0; i < int(blockCount); i++ {
+		stats.Update(blockList[i])
+	}
 	// merger blocks for big file
 	if fileTask.IsLocalFile() {
 		if !fileTask.IsSingleFile() {
-			localPartFiles := make([]string, fileTask.BlockCount)
-			for i := 0; i < int(fileTask.BlockCount); i++ {
+			localPartFiles := make([]string, blockCount)
+			for i := 0; i < int(blockCount); i++ {
 				localPartFiles[i] = blockList[i].GetLocalPartPath()
-				stats.Update(blockList[i])
 			}
 			err := utils.MergeFiles(localPartFiles, fileTask.LocalFile)
 			if err != nil {
 				log.WithError(err).WithField("key", fileTask.ObjectKey).Errorln("failed to merge file")
 				return err
 			}
-		} else {
-			stats.Update(blockList[0])
 		}
 
 		// verify file with checksum

@@ -69,7 +69,7 @@ func ParseToken(tokenString, sk string) (jwt.MapClaims, error) {
 		return claims, nil
 	}
 
-	return nil, fmt.Errorf("无效令牌")
+	return nil, fmt.Errorf("invalid token")
 }
 
 // generate MD5(Base64) from file

@@ -20,10 +20,11 @@ import (
 	"context"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/bucket"
 	"github.com/yangagile/pcache/sdk/pc-sdk-go/utils"
+	"os"
 	"testing"
 )
 
-func Test__SkipUnchanged(t *testing.T) {
+func Test_SkipUnchanged(t *testing.T) {
 	// create pbucket
 	cfg := GetConfig()
 	ctx := bucket.WithOptions(context.Background())
@@ -41,6 +42,7 @@ func Test__SkipUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create local file:%v with err:%v", localFilePath, err)
 	}
+	defer os.Remove(localFilePath)
 
 	// delete the object if it's existing
 	fileKey := utils.MergePath(cfg.Bucket.Prefix, fileName)
@@ -59,7 +61,7 @@ func Test__SkipUnchanged(t *testing.T) {
 		t.Fatalf("failed to put from PCP disk")
 	}
 
-	// enable skip unchanged optong
+	// enable skip unchanged option
 	bucket.GetOptions(ctx).SkipUnchanged = true
 
 	// put same file again, check with file size
@@ -118,5 +120,63 @@ func Test__SkipUnchanged(t *testing.T) {
 	fstat = bucket.GetOptions(ctx).FileStats
 	if fstat.CountSkipUnchanged != 1 {
 		t.Fatalf("failed to put from PCP disk")
+	}
+}
+
+func Test__SkipExisting(t *testing.T) {
+	// create pbucket
+	ctx := bucket.WithOptions(context.Background())
+	bucket.GetOptions(ctx).Checksum = "crc32"
+	cfg := GetConfig()
+	pb, err := bucket.NewPBucket(ctx, cfg.Pms.Url, cfg.Bucket.Name, cfg.Bucket.Ak, cfg.Bucket.Sk,
+		[]string{"PutObject,GetObject"})
+	if err != nil {
+		t.Fatalf("failed to create pb: %v", err)
+	}
+	defer pb.Close()
+
+	// create test file
+	fileName := utils.GetCurrentFunctionName()
+	fileSize := int64(1024)
+	localFilePath, err := utils.CreateTestFile(cfg.Local.Root, fileName, fileSize)
+	if err != nil {
+		t.Fatalf("failed to create local file:%v with err:%v", localFilePath, err)
+	}
+	fileKey := utils.MergePath(cfg.Local.Root, fileName)
+	defer os.Remove(localFilePath)
+
+	// test skip existing key for put
+	bucket.GetOptions(ctx).SkipExisting = true
+	_, err = pb.PutObject(ctx, localFilePath, fileKey)
+	if err != nil {
+		t.Fatalf("failed to file:%v with err:%v", fileName, err)
+	}
+	fstats := bucket.GetOptions(ctx).FileStats
+	if fstats.CountSkipExisting != 1 {
+		t.Fatalf("failed to skip existing key")
+	}
+
+	// first get file
+	ctx = bucket.WithOptions(context.Background())
+	downloadPath := utils.MergePath(cfg.Local.Root, fileName)
+	_, err = pb.GetObject(ctx, fileKey, downloadPath)
+	if err != nil {
+		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
+	}
+	stat := bucket.GetOptions(ctx).BlockStats
+	if stat.CountPcpMemory <= 0 {
+		t.Fatalf("failed to get from PCP memeory")
+	}
+
+	// test skip to get if local file is existing
+	ctx = bucket.WithOptions(context.Background())
+	bucket.GetOptions(ctx).SkipExisting = true
+	_, err = pb.GetObject(ctx, fileKey, downloadPath)
+	if err != nil {
+		t.Fatalf("failed to get file:%v with err:%v", fileName, err)
+	}
+	fstats = bucket.GetOptions(ctx).FileStats
+	if fstats.CountSkipExisting != 1 {
+		t.Fatalf("failed to skip existing key")
 	}
 }

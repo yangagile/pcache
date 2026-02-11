@@ -25,26 +25,56 @@ import (
 func Test_NewBucketWithOptions(t *testing.T) {
 	cfg := GetConfig()
 	ctx := bucket.WithOptions(context.Background())
+
+	blockSize := int64(10 * 1024 * 1024)
+	blockWorkerChanSize := 256
+	blockWorkerThreadNumber := 32
+	fileTaskThreadNumber := 32
+	stsTls := int64(3600)
+	pcpTls := int64(30)
 	pb, err := bucket.NewPBucketWithOptions(ctx, cfg.Pms.Url, cfg.Bucket.Name, cfg.Bucket.Ak, cfg.Bucket.Sk,
 		[]string{"PutObject,GetObject"},
-		bucket.WithBlockSize(10*1024*1024),
-		bucket.WithBlockWorkerChanSize(256),
-		bucket.WithBlockWorkerThreadNumber(16),
-		bucket.WithFileTaskThreadNumber(16),
-		bucket.WithStsTls(3600),
-		bucket.WithPcpTls(30),
+		bucket.WithBlockSize(blockSize),
+		bucket.WithBlockWorkerChanSize(blockWorkerChanSize),
+		bucket.WithBlockWorkerThreadNumber(blockWorkerThreadNumber),
+		bucket.WithFileTaskThreadNumber(fileTaskThreadNumber),
+		bucket.WithStsTls(stsTls),
+		bucket.WithPcpTls(pcpTls),
 	)
 	if err != nil {
 		t.Fatalf("failed to create pb: %v", err)
 	}
 	defer pb.Close()
 
-	if pb.GetBlockSize() != 10*1024*1024 {
-		t.Fatalf("pb block size should be 0*1024*1024")
+	if pb.GetBlockSize() != blockSize {
+		t.Fatalf("invalid blockSize, expect:%d, but got:%d", blockSize, pb.GetBlockSize())
 	}
+	if pb.GetBlockWorkerChanSize() != blockWorkerChanSize {
+		t.Fatalf("invalid blockWorkerChanSize, expect:%d, but got:%d",
+			blockWorkerChanSize, pb.GetBlockWorkerChanSize())
+	}
+	if pb.GetBlockWorkerThreadNumber() != blockWorkerThreadNumber {
+		t.Fatalf("invalid blockWorkerThreadNumber, expect:%d, but got:%d",
+			blockWorkerThreadNumber, pb.GetBlockWorkerThreadNumber())
+	}
+	if pb.GetFileTaskThreadNumber() != fileTaskThreadNumber {
+		t.Fatalf("invalid fileTaskThreadNumber, expect:%d, but got:%d",
+			fileTaskThreadNumber, pb.GetFileTaskThreadNumber())
+	}
+	if pb.GetStsTls() != stsTls {
+		t.Fatalf("invalid stsTls, expect:%d, but got:%d",
+			stsTls, pb.GetStsTls())
+	}
+	if pb.GetPcpTls() != pcpTls {
+		t.Fatalf("invalid pcpTls, expect:%d, but got:%d",
+			pcpTls, pb.GetPcpTls())
+	}
+}
 
+func Test_NewBucketWithOptions_invalidBlockSize(t *testing.T) {
 	// for invalid block size
-	_, err = bucket.NewPBucketWithOptions(ctx, "http://127.0.0.1:8080", "bucket", "ak", "sk",
+	ctx := bucket.WithOptions(context.Background())
+	_, err := bucket.NewPBucketWithOptions(ctx, "http://127.0.0.1:8080", "bucket", "ak", "sk",
 		[]string{"PutObject,GetObject"}, bucket.WithBlockSize(1*1024*1024),
 	)
 	if err == nil {
