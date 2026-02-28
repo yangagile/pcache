@@ -114,12 +114,8 @@ func (m *FileManager) Wait() {
 	m.wg.Wait()
 }
 
-func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
-	startTime := time.Now().UnixMilli()
-	defer m.updateFState(ctx, startTime, fileTask)
-
+func (m *FileManager) checkPut(ctx context.Context, fileTask *FileTask) (bool, error) {
 	options := GetOptions(ctx)
-	var uploadID *string = nil
 	if options.SkipExisting {
 		err := m.headObject(ctx, fileTask)
 		if err == nil {
@@ -127,7 +123,7 @@ func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
 			if options.DebugMode {
 				log.WithField("key", fileTask.ObjectKey).Infoln("the remote key is existing")
 			}
-			return nil
+			return true, nil
 		}
 	}
 	if options.SkipUnchanged {
@@ -136,7 +132,7 @@ func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
 			log.WithError(err).WithField("LocalFile", fileTask.LocalFile).
 				WithField("ObjectKey", fileTask.ObjectKey).
 				Errorln("failed to diff local file and remote object")
-			return err
+			return false, err
 		}
 		if same {
 			if options.DebugMode {
@@ -145,7 +141,7 @@ func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
 					Infoln("local file and remote object are same")
 			}
 			fileTask.Stats = FSTATE_OK_SKIP_UNCHANG
-			return nil
+			return true, nil
 		}
 	}
 
@@ -157,7 +153,7 @@ func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
 			if err != nil {
 				log.WithError(err).WithField("LocalFile", fileTask.LocalFile).
 					Errorln("failed to get local file checksum")
-				return err
+				return false, err
 			}
 			if fileTask.Metadata == nil {
 				fileTask.Metadata = make(map[string]string)
@@ -165,6 +161,26 @@ func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
 			fileTask.Metadata["checksum_"+options.Checksum] = fileTask.LocalChecksum
 		}
 	}
+	return false, nil
+}
+
+func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
+	startTime := time.Now().UnixMilli()
+	defer m.updateFState(ctx, startTime, fileTask)
+
+	unchanged, err := m.checkPut(ctx, fileTask)
+	if err != nil {
+		log.WithError(err).WithField("LocalFile", fileTask.LocalFile).
+			WithField("ObjectKey", fileTask.ObjectKey).
+			Errorln("failed to check file with remote object before put")
+		return err
+	}
+	if unchanged {
+		return nil
+	}
+
+	options := GetOptions(ctx)
+	var uploadID *string = nil
 
 	// multipart for big file to create upload ID
 	if !fileTask.IsSingleFile() {
@@ -248,6 +264,63 @@ func (m *FileManager) PutFile(ctx context.Context, fileTask *FileTask) error {
 	return nil
 }
 
+func (m *FileManager) checkGet(ctx context.Context, fileTask *FileTask) (bool, error) {
+	options := GetOptions(ctx)
+
+	// if skip local existing is enabled
+	if options.SkipExisting {
+		_, err := os.Stat(fileTask.LocalFile)
+		if err == nil {
+			fileTask.Stats = FSTATE_OK_SKIP_EXIST
+			if options.DebugMode {
+				log.WithField("file", fileTask.LocalFile).
+					Infoln("the local file is existing before get")
+			}
+			return true, nil
+		}
+	}
+
+	// get file size from object storage for big file
+	if fileTask.BlockCount == 0 {
+		if options.IsSmallFile {
+			// for small file don't call head object for better performance.
+			fileTask.BlockCount = 1
+			fileTask.ObjectSize = 0
+		} else {
+			err := m.headObject(ctx, fileTask)
+			if err != nil {
+				log.WithError(err).WithField("ObjectKey", fileTask.ObjectKey).
+					Errorln("failed to head remote object")
+				return false, err
+			}
+		}
+	}
+
+	// if skip unchanged is enabled
+	if options.SkipUnchanged {
+		_, err := os.Stat(fileTask.LocalFile)
+		if err == nil {
+			same, err := m.diffFile2Object(ctx, fileTask)
+			if err != nil {
+				log.WithError(err).WithField("LocalFile", fileTask.LocalFile).
+					WithField("ObjectKey", fileTask.ObjectKey).
+					Errorln("failed to diff local file and remote object")
+				return false, err
+			}
+			if same {
+				if options.DebugMode {
+					log.WithField("LocalFile", fileTask.LocalFile).
+						WithField("ObjectKey", fileTask.ObjectKey).
+						Infoln("local file and remote object are same")
+				}
+				fileTask.Stats = FSTATE_OK_SKIP_UNCHANG
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 func (m *FileManager) GetFile(ctx context.Context, fileTask *FileTask) error {
 	startTime := time.Now().UnixMilli()
 	defer m.updateFState(ctx, startTime, fileTask)
@@ -256,53 +329,19 @@ func (m *FileManager) GetFile(ctx context.Context, fileTask *FileTask) error {
 	remaining := int64(0)
 	currentOffset := int64(0)
 	blockCount := int64(0)
+
 	if fileTask.IsLocalFile() {
-		if fileTask.BlockCount == 0 {
-			if options.IsSmallFile {
-				// for small file don't call head object for better performance.
-				fileTask.BlockCount = 1
-				fileTask.ObjectSize = 0
-			} else {
-				err := m.headObject(ctx, fileTask)
-				if err != nil {
-					log.WithError(err).WithField("ObjectKey", fileTask.ObjectKey).
-						Errorln("failed to head remote object")
-					return err
-				}
-			}
+		unchanged, err := m.checkGet(ctx, fileTask)
+		if err != nil {
+			log.WithError(err).WithField("LocalFile", fileTask.LocalFile).
+				WithField("ObjectKey", fileTask.ObjectKey).
+				Errorln("failed to check file with remote object")
+			return err
 		}
-		if options.SkipExisting {
-			_, err := os.Stat(fileTask.LocalFile)
-			if err == nil {
-				fileTask.Stats = FSTATE_OK_SKIP_EXIST
-				if options.DebugMode {
-					log.WithField("file", fileTask.LocalFile).Infoln("the local file is existing")
-				}
-				return nil
-			}
+		if unchanged {
+			return nil
 		}
-		if options.SkipUnchanged {
-			_, err := os.Stat(fileTask.LocalFile)
-			// 如果错误为 nil，表示文件存在；如果错误为 os.ErrNotExist，表示文件不存在
-			if err == nil {
-				same, err := m.diffFile2Object(ctx, fileTask)
-				if err != nil {
-					log.WithError(err).WithField("LocalFile", fileTask.LocalFile).
-						WithField("ObjectKey", fileTask.ObjectKey).
-						Errorln("failed to diff local file and remote object")
-					return err
-				}
-				if same {
-					if options.DebugMode {
-						log.WithField("LocalFile", fileTask.LocalFile).
-							WithField("ObjectKey", fileTask.ObjectKey).
-							Infoln("local file and remote object are same")
-					}
-					fileTask.Stats = FSTATE_OK_SKIP_UNCHANG
-					return nil
-				}
-			}
-		}
+
 		if fileTask.ObjectSize != 0 {
 			remaining = fileTask.ObjectSize
 		} else {
@@ -318,6 +357,7 @@ func (m *FileManager) GetFile(ctx context.Context, fileTask *FileTask) error {
 		inBlockEnd := (currentOffset + remaining) / fileTask.BlockSize
 		blockCount = inBlockEnd - inBlockStart + 1
 	}
+
 	var wg sync.WaitGroup
 	wg.Add(int(blockCount))
 	fileTask.Wg = &wg

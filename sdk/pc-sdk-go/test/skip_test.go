@@ -123,7 +123,7 @@ func Test_SkipUnchanged(t *testing.T) {
 	}
 }
 
-func Test__SkipExisting(t *testing.T) {
+func Test_SkipExisting(t *testing.T) {
 	// create pbucket
 	ctx := bucket.WithOptions(context.Background())
 	bucket.GetOptions(ctx).Checksum = "crc32"
